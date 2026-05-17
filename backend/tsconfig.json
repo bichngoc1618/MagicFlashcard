@@ -1,0 +1,15 @@
+{
+  // This project uses JavaScript with ES modules, not TypeScript
+  // Keeping this file for IDE support, but it's not compiled
+  "compilerOptions": {
+    "module": "nodenext",
+    "target": "esnext",
+    "moduleResolution": "nodenext",
+    "skipLibCheck": true,
+    "strict": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*.js"],
+  "exclude": ["node_modules", "uploads", "dist"]
+}
+

@@ -1,0 +1,311 @@
+import { BACKEND_URL } from '../config/BackendConfig';
+
+const parseJson = async (response: Response) => {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+};
+
+const request = async (path: string, options: RequestInit = {}) => {
+  const url = `${BACKEND_URL}${path}`;
+  const response = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+  const data = await parseJson(response);
+  if (!response.ok) {
+    throw new Error(data?.error || `Request failed ${response.status}`);
+  }
+  return data;
+};
+
+export const login = async (email: string, password: string) => {
+  return request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+};
+
+export const register = async (username: string, email: string, password: string) => {
+  return request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ username, email, password }),
+  });
+};
+
+export const getMaterials = async (userId: number) => {
+  return request(`/api/materials/${userId}`);
+};
+
+export const getStudyJourney = async (materialId: number, userId?: number) => {
+  const query = userId ? `?userId=${userId}` : '';
+  return request(`/api/study/journey/${materialId}${query}`);
+};
+
+export const getProfile = async (userId: number) => {
+  return request(`/api/profile/${userId}`);
+};
+
+export const getFlashcards = async (materialId: number, userId?: number) => {
+  const query = userId ? `?userId=${userId}` : '';
+  return request(`/api/flashcards/${materialId}${query}`);
+};
+
+export const createFlashcard = async (materialId: number, card: any) => {
+  return request('/api/flashcards', {
+    method: 'POST',
+    body: JSON.stringify({ materialId, ...card }),
+  });
+};
+
+export const searchDictionary = async (keyword: string) => {
+  const query = keyword.trim();
+  if (!query) return null;
+
+  try {
+    // 1. Gọi API Mazii lấy thông tin từ vựng gốc (Nghĩa tiếng Việt)
+    const wordResponse = await fetch('https://mazii.net/api/search', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        dict: 'javi',
+        type: 'word',
+        query: query,
+        limit: 1,
+      }),
+    });
+
+    if (!wordResponse.ok) throw new Error('Mazii word lookup failed');
+    const wordJson = await wordResponse.json();
+    const wordData = wordJson.data || wordJson.results || [];
+    const item = wordData[0];
+
+    if (!item) return null;
+
+    // 2. Gom toàn bộ các nét nghĩa trong mảng 'means' lại thành một chuỗi
+    let vietnameseMeaning = item.short_mean || '';
+    if (!vietnameseMeaning && Array.isArray(item.means)) {
+      vietnameseMeaning = item.means.map((m: any) => m.mean).join(', ');
+    }
+
+    // 3. Bóc tách tối đa 2 câu ví dụ trực tiếp từ cấu trúc dữ liệu của nét nghĩa
+    let exampleText = '';
+    if (Array.isArray(item.means) && item.means.length > 0) {
+      // Tìm nét nghĩa đầu tiên có chứa danh sách ví dụ mẫu hợp lệ
+      const meanWithExample = item.means.find(
+        (m: any) => Array.isArray(m.examples) && m.examples.length > 0
+      );
+      
+      if (meanWithExample) {
+        exampleText = meanWithExample.examples
+          .slice(0, 2) // Lấy tối đa 2 ví dụ
+          .map((ex: any) => {
+            const ja = ex.content || ''; // Câu tiếng Nhật gốc
+            const vi = ex.mean || '';    // Bản dịch tiếng Việt
+            return ja && vi ? `${ja}\n(${vi})` : ja || vi || '';
+          })
+          .filter((str: string) => str !== '')
+          .join('\n\n');
+      }
+    }
+
+    // 4. Lọc sạch chuỗi Hiragana (Chỉ lấy cách đọc chính xác và phổ biến nhất ở cuối mảng)
+    let cleanHiragana = item.phonetic || '';
+    if (cleanHiragana.includes(' ')) {
+      const hiraganaArray = cleanHiragana.trim().split(/\s+/);
+      cleanHiragana = hiraganaArray[hiraganaArray.length - 1];
+    }
+
+    // 5. Trả về Object dữ liệu chuẩn hóa, Type-safe cho AddVocabularyModal
+    return {
+      word: item.word || query,
+      kanji: item.kanji || '',
+      hiragana: cleanHiragana, 
+      meaning: vietnameseMeaning || 'Chưa rõ nghĩa',
+      example: exampleText || 'Không có ví dụ mẫu', 
+    };
+
+  } catch (error) {
+    console.error('Lỗi kết nối từ điển Mazii:', error);
+    throw error;
+  }
+};
+
+export const updateFlashcard = async (flashcardId: number, card: any) => {
+  return request(`/api/flashcards/${flashcardId}`, {
+    method: 'PUT',
+    body: JSON.stringify(card),
+  });
+};
+
+export const deleteFlashcard = async (flashcardId: number) => {
+  return request(`/api/flashcards/${flashcardId}`, {
+    method: 'DELETE',
+  });
+};
+
+export const bulkCreateFlashcards = async (materialId: number, cards: any[]) => {
+  return request('/api/flashcards/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ materialId, cards }),
+  });
+};
+
+export const startStudy = async (materialId: number) => {
+  return request(`/api/study/start/${materialId}`);
+};
+
+export const syncStudy = async (payload: any) => {
+  return request('/api/study/sync', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};
+
+export const getUserStats = async (userId: number) => {
+  return request(`/api/user/stats/${userId}`);
+};
+
+export const seedDefaultMaterials = async (userId: number) => {
+  return request(`/api/materials/seed-default/${userId}`, { method: 'POST' });
+};
+
+export const speakText = async (text: string, userId?: number) => {
+  return request('/api/text', {
+    method: 'POST',
+    body: JSON.stringify({ text, userId }),
+  });
+};
+
+export const speakAudio = async (formData: FormData) => {
+  const response = await fetch(`${BACKEND_URL}/api/speak`, {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await parseJson(response);
+  if (!response.ok) {
+    throw new Error(data?.error || `Request failed ${response.status}`);
+  }
+  return data;
+};
+
+export const getChatHistory = async (userId?: number, all = false) => {
+  if (all) {
+    return request('/api/chat/history');
+  }
+  if (userId) {
+    return request(`/api/chat/history/${encodeURIComponent(userId)}`);
+  }
+  return request('/api/chat-history');
+};
+
+export const getStudyPath = async (userId: number, materialId: number) => {
+  return request(`/api/progress/study-path/${userId}/${materialId}`);
+};
+
+export const saveQuizAnswer = async (payload: {
+  userId: number;
+  materialId: number;
+  batchIndex: number;
+  questionIndex: number;
+  quizStepType: string;
+  isCorrect: boolean;
+}) => {
+  return request('/api/progress/save-quiz-answer', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};
+
+export const getQuizProgress = async (payload: {
+  userId: number;
+  materialId: number;
+  batchIndex: number;
+  quizStepType: string;
+}) => {
+  return request(
+    `/api/progress/quiz-progress/${payload.userId}/${payload.materialId}/${payload.batchIndex}/${payload.quizStepType}`
+  );
+};
+
+export const markCardLearned = async (payload: {
+  userId: number;
+  materialId: number;
+  flashcardId: number;
+}) => {
+  return request('/api/progress/mark-learned', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};
+
+export const updateProgress = async (payload: {
+  userId: number;
+  materialId: number;
+  flashcardId: number;
+}) => {
+  return request('/api/progress/update', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};
+
+export const resetBatchProgress = async (payload: {
+  userId: number;
+  materialId: number;
+  batchIndex: number;
+}) => {
+  return request('/api/progress/reset-batch', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};
+
+export const completeQuizSession = async (payload: {
+  userId: number;
+  materialId: number;
+  sessionType: string;
+  batchIndex: number;
+  totalQuestions: number;
+  correctAnswers: number;
+}) => {
+  return request('/api/progress/complete-quiz', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};
+
+export const completeFlashcardBatch = async (payload: {
+  userId: number;
+  materialId: number;
+  batchIndex: number;
+}) => {
+  return request('/api/flashcard/complete', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};
+
+export const completeQuizNode = async (payload: {
+  userId: number;
+  materialId: number;
+  nodeId: string;
+  sessionType?: string;
+  batchIndex?: number;
+  totalQuestions?: number;
+  correctAnswers?: number;
+}) => {
+  return request('/api/quiz/complete-node', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};
