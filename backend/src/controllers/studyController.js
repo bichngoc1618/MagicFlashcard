@@ -29,11 +29,17 @@ export const getStudyPath = async (req, res) => {
     let nodes = [];
     // ... (Phần logic tạo nodes của bạn ở đây) ...
 
+    const totalNodes = nodes.length;
+    const completedNodes = Math.min(Math.max(Number(currentNodeIndex) || 0, 0), totalNodes);
+    const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
+
     res.json({
       material: material[0],
       journeyNodes: nodes,
       currentActiveNodeIndex: currentNodeIndex,
-      progressPercentage: totalCards > 0 ? Math.round((cards.filter(c => c.is_learned).length / totalCards) * 100) : 0
+      totalNodes,
+      completedNodes,
+      progressPercentage,
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 };
@@ -42,7 +48,9 @@ export const getStudyPath = async (req, res) => {
 export const startStudy = async (req, res) => {
   try {
     const materialId = Number(req.params.materialId);
-    const userId = req.body.userId || 1;
+    const userId = req.body?.userId || 1;
+
+    console.log(`📚 Starting study session: userId=${userId}, materialId=${materialId}`);
 
     let [pathRows] = await db.query('SELECT * FROM learning_path WHERE material_id = ? AND user_id = ?', [materialId, userId]);
     if (pathRows.length === 0) {
@@ -58,11 +66,14 @@ export const startStudy = async (req, res) => {
       [userId, formatDate(new Date())]
     );
 
+    console.log(`✅ Session created: sessionId=${sessionResult.insertId}`);
+
     res.json({
       sessionId: sessionResult.insertId,
       current_card_index: pathRows[0]?.current_card_index || 0,
     });
   } catch (error) {
+    console.error('❌ POST /study/start error:', error);
     res.status(500).json({ error: 'Không thể bắt đầu học.' });
   }
 };
@@ -111,10 +122,30 @@ export const syncStudy = async (req, res) => {
 
     await Promise.all(updates);
 
-    // Cập nhật session nếu có sessionId
+    // Cập nhật session nếu có sessionId: set end_time và tính duration
     if (sessionId) {
       const now = new Date();
-      await db.query('UPDATE user_study_sessions SET end_time = ? WHERE id = ?', [now, sessionId]);
+
+      // Lấy start_time của session
+      const [rows] = await db.query('SELECT start_time FROM user_study_sessions WHERE id = ?', [sessionId]);
+      const startTime = rows[0]?.start_time;
+
+      let durationMinutes = 0;
+      if (startTime) {
+        durationMinutes = calculateMinutes(startTime, now);
+      }
+
+      console.log(`⏱️ Updating session ${sessionId}: duration=${durationMinutes} minutes`);
+
+      await db.query('UPDATE user_study_sessions SET end_time = ?, duration = ? WHERE id = ?', [now, durationMinutes, sessionId]);
+
+      // Cập nhật last_study_date của user (giúp thống kê và chuỗi)
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        await db.query('UPDATE users SET last_study_date = ? WHERE id = ?', [today, userId]);
+      } catch (e) {
+        console.warn('Không thể cập nhật last_study_date:', e);
+      }
     }
 
     res.json({ success: true });

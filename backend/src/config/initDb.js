@@ -15,6 +15,11 @@ const initDb = async () => {
                 UNIQUE KEY unique_quiz_progress (user_id, material_id, batch_index, question_index)
             )`
         );
+        // Ensure users table has global_hearts column
+        await connection.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS global_hearts INT NOT NULL DEFAULT 5`);
+
+        // Ensure users table has global_hearts column
+        await connection.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS global_hearts INT NOT NULL DEFAULT 5`);
         connection.release();
         console.log('✅ initDb: Kết nối đến MySQL thành công.');
     } catch (err) {

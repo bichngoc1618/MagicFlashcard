@@ -1,4 +1,4 @@
-﻿import React, { useContext, useState, useCallback, useMemo } from 'react';
+﻿import React, { useState, useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -14,7 +14,7 @@ import { Flame, BookOpen, GraduationCap, ChevronRight, AlertCircle } from 'lucid
 import { StackScreenProps } from '@react-navigation/stack';
 import * as Progress from 'react-native-progress';
 
-import { AuthContext } from '../context/AuthContext';
+import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../components/AppNavigator';
 import ScreenContainer from '../components/ScreenContainer';
@@ -63,12 +63,12 @@ const fetchHomeData = async (userId: number): Promise<HomeData> => {
 };
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
-  const { user } = useContext(AuthContext);
+  const { user, streakCount } = useAuthContext();
   const { colors } = useTheme();
   const [isReady, setIsReady] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [materials, setMaterials] = useState<any[]>([]);
-  const [userStats, setUserStats] = useState({ streak: 0 });
+  const [userStats, setUserStats] = useState({ streak: streakCount });
   const [homeData, setHomeData] = useState<HomeData>({ totalXP: 0, wrongWords: [] });
 
   const loadData = useCallback(async () => {
@@ -80,22 +80,26 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         fetchHomeData(user.id),
       ]);
       setMaterials(matsRes.materials || []);
-      setUserStats({ streak: statsRes.streakCount || 0 });
+      setUserStats({ streak: statsRes.streakCount ?? streakCount ?? 0 });
       setHomeData(homeRes);
     } catch (error) {
       console.warn('Lỗi load data:', error);
     } finally {
       setIsReady(true);
     }
-  }, [user?.id]);
+  }, [user?.id, streakCount]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   // Logic tính toán Level
   const lvlInfo = useMemo(() => calculateLevelInfo(homeData.totalXP), [homeData.totalXP]);
 
+  const streakDisplay = streakCount || userStats.streak || 0;
   const streakMascot = require('../../assets/sharkMagic.png');
   const currentLesson = materials.find(m => m.status === 'in_progress') || materials[0];
+  const currentLessonCompleted = currentLesson ? (currentLesson.completed_nodes ?? currentLesson.learned_cards ?? 0) : 0;
+  const currentLessonTotal = currentLesson ? (currentLesson.total_nodes ?? currentLesson.total_cards ?? 0) : 0;
+  const currentLessonProgress = currentLessonTotal ? (currentLesson.node_progress_percentage ?? 0) / 100 : 0;
 
   const dynamicStyles = StyleSheet.create({
     loaderContainer: { 
@@ -139,7 +143,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           <View style={styles.streakInfoContainer}>
             <View style={styles.streakTagRow}>
               <Flame size={16} color="#FFD02C" fill="#FFD02C" />
-              <Text style={styles.streakTagText}>Chuỗi {userStats.streak} ngày</Text>
+              <Text style={styles.streakTagText}>Chuỗi {streakDisplay} ngày</Text>
             </View>
             <Text style={styles.streakValue}>Lv. {lvlInfo.level}</Text>
             <Text style={styles.streakSubtitle}>Còn {lvlInfo.xpToNextLevel} XP để lên cấp!</Text>
@@ -173,13 +177,13 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               </View>
               <View style={styles.todayCardText}>
                 <Text style={[styles.todayCardTitle, { color: colors.text }]}>{currentLesson.title}</Text>
-                <Text style={[styles.todayCardSubtitle, { color: colors.textSecondary }]}>Đã học {currentLesson.learned_cards || 0}/{currentLesson.total_cards || 0} từ</Text>
+                <Text style={[styles.todayCardSubtitle, { color: colors.textSecondary }]}>Đã hoàn thành {currentLessonCompleted}/{currentLessonTotal} mục</Text>
               </View>
-              <View style={[styles.todayCardProgressBadge, { backgroundColor: colors.primary }]}>
-                <Text style={styles.todayCardProgressText}>{Math.round(((currentLesson.learned_cards || 0) / (currentLesson.total_cards || 1)) * 100)}%</Text>
+              <View style={[styles.todayCardProgressBadge, { backgroundColor: colors.primary }]}> 
+                <Text style={styles.todayCardProgressText}>{Math.round(currentLessonProgress * 100)}%</Text>
               </View>
             </View>
-            <ProgressBar progress={(currentLesson.learned_cards || 0) / (currentLesson.total_cards || 1)} colors={colors} />
+            <ProgressBar progress={currentLessonProgress} colors={colors} />
           </TouchableOpacity>
         )}
 
@@ -188,7 +192,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           {homeData.wrongWords.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {homeData.wrongWords.map((word, index) => (
-                <View key={index} style={[styles.wrongWordCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View key={index} style={[styles.wrongWordCard, { backgroundColor: colors.card, borderColor: colors.border }]}> 
                   <AlertCircle size={14} color={colors.danger} style={{marginBottom: 4}} />
                   <Text style={[styles.wrongWordKanji, { color: colors.danger }]}>{word.kanji}</Text>
                   <Text style={[styles.wrongWordMeaning, { color: colors.danger }]} numberOfLines={1}>{word.meaning}</Text>
@@ -202,17 +206,23 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
         <SectionHeader title="Thư viện của bạn" colors={colors} actionLabel="Xem tất cả" onAction={() => navigation.navigate('Study')} />
         <View style={styles.courseGrid}>
-          {materials.map((item) => (
-            <SmallCourseCard
-              key={item.id}
-              materialId={item.id}
-              title={item.title}
-              stats={`${item.learned_cards || 0}/${item.total_cards || 0} từ`}
-              progress={item.total_cards ? item.learned_cards / item.total_cards : 0}
-              onPress={() => navigation.navigate('StudyJourney', { materialId: item.id })}
-              colors={colors}
-            />
-          ))}
+          {materials.map((item) => {
+            const statsCount = item.completed_nodes !== undefined && item.total_nodes !== undefined
+              ? `${item.completed_nodes}/${item.total_nodes} mục`
+              : `${item.learned_cards || 0}/${item.total_cards || 0} từ`;
+            const progressValue = item.total_nodes ? (item.node_progress_percentage || 0) / 100 : item.total_cards ? item.learned_cards / item.total_cards : 0;
+            return (
+              <SmallCourseCard
+                key={item.id}
+                materialId={item.id}
+                title={item.title}
+                stats={statsCount}
+                progress={progressValue}
+                onPress={() => navigation.navigate('StudyJourney', { materialId: item.id })}
+                colors={colors}
+              />
+            );
+          })}
         </View>
       </ScrollView>
       <BottomNavigation activeTab="home" />
@@ -305,7 +315,7 @@ const styles = StyleSheet.create({
   emptyText: { textAlign: 'center', fontStyle: 'italic' },
   courseGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   courseCard: { width: '48%', borderRadius: 22, padding: 16, marginBottom: 16, elevation: 2, borderWidth: 1 },
-  courseCardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  courseCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, overflow: 'visible' },
   courseIconBox: { width: 36, height: 36, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   courseCardTitle: { fontSize: 15, fontWeight: '800' },
   courseCardStats: { fontSize: 11, marginVertical: 6 },

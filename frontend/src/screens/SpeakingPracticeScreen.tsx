@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useContext } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import { Audio } from 'expo-av';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import { AuthContext } from '../context/AuthContext';
+import { useAuthContext } from '../context/AuthContext';
 import { getChatHistory, speakText, speakAudio } from '../api/api';
 import BottomNavigation from '../components/BottomNavigation';
 import { useTheme } from '../context/ThemeContext';
@@ -28,7 +28,7 @@ interface Message {
 }
 
 export default function SpeakingPracticeScreen() {
-  const { user } = useContext(AuthContext);
+  const { user } = useAuthContext();
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isLoadingAI, setIsLoadingAI] = useState(false);

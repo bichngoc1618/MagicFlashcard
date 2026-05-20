@@ -1,17 +1,17 @@
-import React, { useContext, useState } from 'react';
+import React, { useState } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, StyleSheet, 
   Alert, Image, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AuthContext } from '../context/AuthContext';
+import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Mail, Lock, ArrowRight } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
 
 export default function LoginScreen({ navigation }: any) {
-  const { login } = useContext(AuthContext);
+  const { login } = useAuthContext();
   const { colors } = useTheme();
   const [email, setEmail] = useState('demo@japanese.local');
   const [password, setPassword] = useState('demo123');

@@ -3,6 +3,7 @@ import React, {
   useEffect,
   useMemo,
   useState,
+  useRef,
 } from 'react';
 
 import {
@@ -15,10 +16,19 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   LayoutChangeEvent,
+  PanResponder,
+  PanResponderInstance,
+  Animated as RNAnimated,
+  Easing,
 } from 'react-native';
 import type { LayoutRectangle } from 'react-native';
 
-import Svg, { Line } from 'react-native-svg';
+import Svg, { Path, Circle } from 'react-native-svg';
+import { LayoutAnimation, UIManager } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 import type { QuizType, QuizWord } from './types';
 
@@ -110,6 +120,7 @@ type Props = {
   onHandleChoiceAnswer: () => void;
 
   onPressTile: (tileId: string) => void;
+  onRemoveTile?: (tileId: string) => void;
 
   onResetChosenTileIds: () => void;
 
@@ -186,6 +197,47 @@ const ChoiceOption = React.memo(
   }
 );
 
+const FlyingTile = ({ char, startX, startY, targetX, targetY, onComplete }: any) => {
+  const anim = useRef(new RNAnimated.Value(0)).current;
+
+  useEffect(() => {
+    RNAnimated.timing(anim, {
+      toValue: 1,
+      duration: 350,
+      easing: Easing.bezier(0.25, 1, 0.5, 1),
+      useNativeDriver: false,
+    }).start(onComplete);
+  }, []);
+
+  const x = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [startX, targetX],
+  });
+
+  const y = anim.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [startY, startY - 80, targetY], // Arc
+  });
+
+  return (
+    <RNAnimated.View
+      style={[
+        styles.tile,
+        {
+          position: 'absolute',
+          left: x,
+          top: y,
+          zIndex: 999,
+          elevation: 10,
+          transform: [{ scale: 1.1 }]
+        }
+      ]}
+    >
+      <Text style={styles.tileText}>{char}</Text>
+    </RNAnimated.View>
+  );
+};
+
 export default function QuizQuestionBody({
   activeType,
   currentWord,
@@ -233,6 +285,7 @@ export default function QuizQuestionBody({
   onHandleChoiceAnswer,
 
   onPressTile,
+  onRemoveTile,
   onResetChosenTileIds,
 
   onSetSelectedLeftId,
@@ -243,6 +296,71 @@ export default function QuizQuestionBody({
   leftItemLayouts,
   rightItemLayouts,
 }: Props) {
+  const cardRef = useRef<View>(null);
+  const answerRefs = useRef<Record<number, any>>({});
+  const bankRefs = useRef<Record<string, any>>({});
+  const [flyingTiles, setFlyingTiles] = useState<{ id: string; char: string; startX: number; startY: number; targetX: number; targetY: number }[]>([]);
+  const [fallingTiles, setFallingTiles] = useState<{ id: string; char: string; startX: number; startY: number; targetX: number; targetY: number }[]>([]);
+
+  const handleBankPress = (tileId: string, char: string) => {
+    if (flyingTiles.some(t => t.id === tileId)) return;
+    
+    const bankEl = bankRefs.current[tileId];
+    const answerIndex = chosenTileIds.length;
+    const answerEl = answerRefs.current[answerIndex];
+
+    if (!cardRef.current || !bankEl || !answerEl) {
+       onPressTile(tileId); return;
+    }
+
+    bankEl.measureLayout(
+      cardRef.current,
+      (startX: number, startY: number) => {
+         answerEl.measureLayout(
+           cardRef.current,
+           (targetX: number, targetY: number) => {
+              setFlyingTiles(prev => [...prev, { id: tileId, char, startX, startY, targetX, targetY }]);
+           },
+           () => onPressTile(tileId)
+         );
+      },
+      () => onPressTile(tileId)
+    );
+  };
+
+  const handleFlightComplete = (tileId: string) => {
+    setFlyingTiles(prev => prev.filter(t => t.id !== tileId));
+    onPressTile(tileId);
+  };
+
+  const handleRemovePress = (tileId: string, answerIndex: number, char: string) => {
+    const bankEl = bankRefs.current[tileId];
+    const answerEl = answerRefs.current[answerIndex];
+
+    if (!cardRef.current || !bankEl || !answerEl) {
+       onRemoveTile && onRemoveTile(tileId); return;
+    }
+
+    answerEl.measureLayout(
+      cardRef.current,
+      (startX: number, startY: number) => {
+         bankEl.measureLayout(
+           cardRef.current,
+           (targetX: number, targetY: number) => {
+              onRemoveTile && onRemoveTile(tileId);
+              setFallingTiles(prev => [...prev, { id: tileId, char, startX, startY, targetX, targetY }]);
+           },
+           () => { onRemoveTile && onRemoveTile(tileId); }
+         );
+      },
+      () => { onRemoveTile && onRemoveTile(tileId); }
+    );
+  };
+
+  const handleFallComplete = (tileId: string) => {
+    setFallingTiles(prev => prev.filter(t => t.id !== tileId));
+  };
+
   const [tempLine, setTempLine] =
     useState<{
       x1: number;
@@ -395,6 +513,110 @@ export default function QuizQuestionBody({
     pairAssignments,
   ]);
 
+  const [dragLine, setDragLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+
+  const handlersRef = useRef({ onHandlePairSelection, onSetSelectedLeftId });
+  const columnOffsetsRef = useRef({ left: 0, right: 0 });
+
+  useEffect(() => {
+    handlersRef.current = { onHandlePairSelection, onSetSelectedLeftId };
+    columnOffsetsRef.current = columnOffsets;
+  }, [onHandlePairSelection, onSetSelectedLeftId, columnOffsets]);
+
+  const panResponders = useRef<Record<string, any>>({});
+
+  useEffect(() => {
+    currentMatchWords.forEach(word => {
+      if (!panResponders.current[word.id]) {
+        panResponders.current[word.id] = PanResponder.create({
+          onStartShouldSetPanResponder: () => !hasSubmitted,
+          onMoveShouldSetPanResponder: () => !hasSubmitted,
+          onPanResponderGrant: () => {
+            handlersRef.current.onSetSelectedLeftId(word.id);
+            const left = leftItemLayouts.current[word.id];
+            if (left) {
+              const x1 = left.x + columnOffsetsRef.current.left + left.width;
+              const y1 = left.y + left.height / 2;
+              setDragLine({ x1, y1, x2: x1, y2: y1 });
+            }
+          },
+          onPanResponderMove: (e, gs) => {
+            setDragLine(prev => {
+              if (!prev) return null;
+              return { ...prev, x2: prev.x1 + gs.dx, y2: prev.y1 + gs.dy };
+            });
+          },
+          onPanResponderRelease: (e, gs) => {
+            setDragLine(prev => {
+              if (!prev) return null;
+              const dropX = prev.x2;
+              const dropY = prev.y2;
+              let hitRightId: string | null = null;
+              let hitLayout: {x: number, y: number, width: number, height: number} | null = null;
+
+              Object.entries(rightItemLayouts.current).forEach(([rId, layout]) => {
+                const rx = layout.x + columnOffsetsRef.current.right;
+                const ry = layout.y;
+                if (
+                  dropX >= rx - 30 && dropX <= rx + layout.width + 30 &&
+                  dropY >= ry - 30 && dropY <= ry + layout.height + 30
+                ) {
+                  hitRightId = rId;
+                  hitLayout = { x: rx, y: ry, width: layout.width, height: layout.height };
+                }
+              });
+
+              if (hitRightId && hitLayout) {
+                // Animate snap
+                const startX = dropX;
+                const startY = dropY;
+                const targetX = (hitLayout as any).x;
+                const targetY = (hitLayout as any).y + (hitLayout as any).height / 2;
+                
+                let progress = 0;
+                const animateSnap = () => {
+                  progress += 0.2; // 5 frames to snap
+                  if (progress >= 1) {
+                    handlersRef.current.onHandlePairSelection(word.id, hitRightId!);
+                    setDragLine(null);
+                  } else {
+                    const currentX = startX + (targetX - startX) * Math.sin(progress * Math.PI / 2);
+                    const currentY = startY + (targetY - startY) * Math.sin(progress * Math.PI / 2);
+                    setDragLine(d => d ? { ...d, x2: currentX, y2: currentY } : null);
+                    requestAnimationFrame(animateSnap);
+                  }
+                };
+                requestAnimationFrame(animateSnap);
+                return prev; // keep showing line while snapping
+              } else {
+                // Snap back to origin
+                const startX = dropX;
+                const startY = dropY;
+                const targetX = prev.x1;
+                const targetY = prev.y1;
+
+                let progress = 0;
+                const animateBack = () => {
+                  progress += 0.15; 
+                  if (progress >= 1) {
+                    setDragLine(null);
+                  } else {
+                    const currentX = startX + (targetX - startX) * Math.sin(progress * Math.PI / 2);
+                    const currentY = startY + (targetY - startY) * Math.sin(progress * Math.PI / 2);
+                    setDragLine(d => d ? { ...d, x2: currentX, y2: currentY } : null);
+                    requestAnimationFrame(animateBack);
+                  }
+                };
+                requestAnimationFrame(animateBack);
+                return prev;
+              }
+            });
+          }
+        });
+      }
+    });
+  }, [currentMatchWords, hasSubmitted, leftItemLayouts, rightItemLayouts]);
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -464,34 +686,48 @@ export default function QuizQuestionBody({
               >
                 {assignedLines.map(
                   (line, index) => (
-                    <Line
-                      key={`line-${index}`}
-                      x1={line.x1}
-                      y1={line.y1}
-                      x2={line.x2}
-                      y2={line.y2}
-                      stroke={line.color}
-                      strokeWidth={4}
-                      strokeLinecap="round"
-                    />
+                    <React.Fragment key={`line-${index}`}>
+                      <Path
+                        d={`M ${line.x1} ${line.y1} Q ${(line.x1 + line.x2) / 2} ${(line.y1 + line.y2) / 2 + 30} ${line.x2} ${line.y2}`}
+                        stroke={line.color}
+                        strokeWidth={4}
+                        strokeLinecap="round"
+                        fill="none"
+                      />
+                      <Circle cx={line.x1} cy={line.y1} r={6} fill={line.color} />
+                      <Circle cx={line.x2} cy={line.y2} r={6} fill={line.color} />
+                    </React.Fragment>
                   )
                 )}
 
+                {dragLine && (
+                  <React.Fragment>
+                    <Path
+                      d={`M ${dragLine.x1} ${dragLine.y1} Q ${(dragLine.x1 + dragLine.x2) / 2} ${(dragLine.y1 + dragLine.y2) / 2 + 50} ${dragLine.x2} ${dragLine.y2}`}
+                      stroke={COLORS.secondary}
+                      strokeWidth={4}
+                      strokeDasharray="8 6"
+                      strokeLinecap="round"
+                      fill="none"
+                    />
+                    <Circle cx={dragLine.x1} cy={dragLine.y1} r={6} fill={COLORS.secondary} />
+                    <Circle cx={dragLine.x2} cy={dragLine.y2} r={6} fill={COLORS.secondary} />
+                  </React.Fragment>
+                )}
+
                 {tempLine && (
-                  <Line
-                    x1={tempLine.x1}
-                    y1={tempLine.y1}
-                    x2={tempLine.x2}
-                    y2={tempLine.y2}
-                    stroke={
-                      wrongPair
-                        ? COLORS.wrong
-                        : COLORS.secondary
-                    }
-                    strokeWidth={4}
-                    strokeDasharray="8 6"
-                    strokeLinecap="round"
-                  />
+                  <React.Fragment>
+                    <Path
+                      d={`M ${tempLine.x1} ${tempLine.y1} Q ${(tempLine.x1 + tempLine.x2) / 2} ${(tempLine.y1 + tempLine.y2) / 2 + 30} ${tempLine.x2} ${tempLine.y2}`}
+                      stroke={wrongPair ? COLORS.wrong : COLORS.secondary}
+                      strokeWidth={4}
+                      strokeDasharray="8 6"
+                      strokeLinecap="round"
+                      fill="none"
+                    />
+                    <Circle cx={tempLine.x1} cy={tempLine.y1} r={6} fill={wrongPair ? COLORS.wrong : COLORS.secondary} />
+                    <Circle cx={tempLine.x2} cy={tempLine.y2} r={6} fill={wrongPair ? COLORS.wrong : COLORS.secondary} />
+                  </React.Fragment>
                 )}
               </Svg>
 
@@ -509,70 +745,47 @@ export default function QuizQuestionBody({
                 {currentMatchWords.map(
                   (word) => {
                     const isAssigned =
-                      pairAssignments[
-                        word.id
-                      ] !== undefined;
+                      pairAssignments[word.id] !== undefined;
 
                     const isMatched =
                       showMatchResults
-                        ? matchedIds.has(
-                            word.id
-                          )
+                        ? matchedIds.has(word.id)
                         : isAssigned;
 
-                    const isSelected =
-                      selectedLeftId ===
-                      word.id;
+                    const isSelected = selectedLeftId === word.id;
 
                     return (
-                      <TouchableOpacity
+                      <View
                         key={word.id}
-                        activeOpacity={
-                          0.85
-                        }
-                        disabled={
-                          hasSubmitted
-                        }
+                        style={{width: '100%'}}
                         onLayout={(e) => {
                           const layout = e.nativeEvent.layout;
                           handleLayout('left', word.id, layout);
                         }}
-                        onPress={() =>
-                          onSetSelectedLeftId(
-                            word.id
-                          )
-                        }
-                        style={[
-                          styles.matchItem,
-
-                          isSelected &&
-                            styles.matchSelected,
-
-                          isAssigned &&
-                            !showMatchResults &&
-                            styles.matchAssigned,
-
-                          isMatched &&
-                            styles.matchCorrect,
-
-                          showMatchResults &&
-                            !isMatched &&
-                            styles.matchWrong,
-                        ]}
+                        {...(panResponders.current[word.id]?.panHandlers || {})}
                       >
-                        <Text
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          disabled={hasSubmitted}
+                          onPress={() => onSetSelectedLeftId(word.id)}
                           style={[
-                            styles.matchKanji,
-
-                            isMatched && {
-                              color:
-                                COLORS.white,
-                            },
+                            styles.matchItem,
+                            isSelected && styles.matchSelected,
+                            isAssigned && !showMatchResults && styles.matchAssigned,
+                            isMatched && styles.matchCorrect,
+                            showMatchResults && !isMatched && styles.matchWrong,
                           ]}
                         >
-                          {word.kanji}
-                        </Text>
-                      </TouchableOpacity>
+                          <Text
+                            style={[
+                              styles.matchKanji,
+                              isMatched && { color: COLORS.white },
+                            ]}
+                          >
+                            {word.kanji}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     );
                   }
                 )}
@@ -753,23 +966,40 @@ export default function QuizQuestionBody({
 
         {activeType ===
           'SCRAMBLED_HIRA' && (
-          <View style={styles.card}>
+          <View style={styles.card} ref={cardRef}>
             <Text style={styles.title}>
               Sắp xếp Hiragana
             </Text>
 
+            <Text style={styles.word}>
+              {currentWord.kanji}
+            </Text>
+
             <View
-              style={styles.scrambleBox}
+              style={[styles.scrambleBox, { flexDirection: 'row', flexWrap: 'wrap', gap: 6, minHeight: 48, paddingHorizontal: 12, paddingVertical: 8 }]}
             >
-              <Text
-                style={
-                  styles.scrambleText
-                }
-              >
-                {selectedScrambledChars.join(
-                  ''
-                )}
-              </Text>
+              {Array.from({ length: currentWord.hiragana.length }).map((_, index) => {
+                const tileId = chosenTileIds[index];
+                const tile = tileId ? tiles.find(t => t.id === tileId) : null;
+                
+                return (
+                  <View
+                    key={`ans-slot-${index}`}
+                    ref={el => { answerRefs.current[index] = el; }}
+                    style={[styles.tile, { backgroundColor: tile ? COLORS.primary : 'rgba(0,0,0,0.05)', borderWidth: tile ? 0 : 1, borderColor: 'rgba(0,0,0,0.1)', borderStyle: 'dashed' }]}
+                  >
+                    {tile && !fallingTiles.some(f => f.id === tile.id) ? (
+                      <TouchableOpacity
+                        disabled={hasSubmitted}
+                        onPress={() => handleRemovePress(tileId, index, tile.char)}
+                        style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center' }]}
+                      >
+                        <Text style={[styles.tileText, { color: COLORS.white }]}>{tile.char}</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                );
+              })}
             </View>
 
             <View
@@ -777,45 +1007,36 @@ export default function QuizQuestionBody({
             >
               {tiles.map((tile) => {
                 const used =
-                  chosenTileIds.includes(
-                    tile.id
-                  );
+                  chosenTileIds.includes(tile.id) ||
+                  flyingTiles.some(f => f.id === tile.id) ||
+                  fallingTiles.some(f => f.id === tile.id);
 
                 return (
-                  <TouchableOpacity
-                    key={tile.id}
-                    disabled={
-                      used ||
-                      hasSubmitted
-                    }
-                    onPress={() =>
-                      onPressTile(
-                        tile.id
-                      )
-                    }
-                    style={[
-                      styles.tile,
-
-                      used &&
-                        styles.tileUsed,
-                    ]}
-                  >
-                    <Text
-                      style={
-                        styles.tileText
-                      }
+                  <View key={tile.id} ref={el => { bankRefs.current[tile.id] = el; }}>
+                    <TouchableOpacity
+                      disabled={used || hasSubmitted}
+                      onPress={() => handleBankPress(tile.id, tile.char)}
+                      style={[
+                        styles.tile,
+                        used && { opacity: 0 },
+                      ]}
                     >
-                      {tile.char}
-                    </Text>
-                  </TouchableOpacity>
+                      <Text style={styles.tileText}>{tile.char}</Text>
+                    </TouchableOpacity>
+                  </View>
                 );
               })}
             </View>
 
+            {flyingTiles.map(f => (
+              <FlyingTile key={`fly-${f.id}`} char={f.char} startX={f.startX} startY={f.startY} targetX={f.targetX} targetY={f.targetY} onComplete={() => handleFlightComplete(f.id)} />
+            ))}
+            {fallingTiles.map(f => (
+              <FlyingTile key={`fall-${f.id}`} char={f.char} startX={f.startX} startY={f.startY} targetX={f.targetX} targetY={f.targetY} onComplete={() => handleFallComplete(f.id)} />
+            ))}
+
             <TouchableOpacity
-              onPress={
-                onResetChosenTileIds
-              }
+              onPress={onResetChosenTileIds}
               style={styles.resetBtn}
             >
               <Text

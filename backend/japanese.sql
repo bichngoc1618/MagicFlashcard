@@ -24,6 +24,26 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `heart_transactions`
+--
+
+CREATE TABLE `heart_transactions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `change_amount` int(11) NOT NULL,
+  `reason` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Dumping data for table `heart_transactions`
+
+INSERT INTO `heart_transactions` (`id`, `user_id`, `change_amount`, `reason`, `created_at`) VALUES
+;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `chat_history`
 --
 
@@ -353,6 +373,7 @@ CREATE TABLE `users` (
   `password_hash` varchar(255) NOT NULL,
   `total_xp` int(10) UNSIGNED NOT NULL DEFAULT 0,
   `streak_count` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `global_hearts` int(10) UNSIGNED NOT NULL DEFAULT 5,
   `last_study_date` date DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

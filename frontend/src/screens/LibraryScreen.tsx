@@ -1,12 +1,14 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   ActivityIndicator,
   StyleSheet,
   Platform,
+  Modal,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { StackScreenProps } from '@react-navigation/stack';
@@ -19,21 +21,23 @@ import {
   Target,
   LayoutGrid,
   CheckCircle,
+  Plus,
+  X,
 } from 'lucide-react-native';
 
-import { AuthContext } from '../context/AuthContext';
+import { useAuthContext } from '../context/AuthContext';
 import type { RootStackParamList } from '../components/AppNavigator';
 import ScreenContainer from '../components/ScreenContainer';
 import BottomNavigation from '../components/BottomNavigation';
 import AppHeaderSearch from '../components/AppHeaderSearch';
 import VocabularyManager from '../components/VocabularyManager';
-import { getMaterials, getUserStats } from '../api/api';
+import { getMaterials, getUserStats, createMaterial } from '../api/api';
 
 type StudyScreenProps = StackScreenProps<RootStackParamList, 'Study'>;
 type TabType = 'inProgress' | 'completed';
 
 export default function StudyScreen({ navigation }: StudyScreenProps) {
-  const { user } = useContext(AuthContext);
+  const { user } = useAuthContext();
   const { colors } = useTheme();
 
   const [searchText, setSearchText] = useState('');
@@ -41,6 +45,11 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
   const [materials, setMaterials] = useState<any[]>([]);
   const [streak, setStreak] = useState(0);
   const [activeTab, setActiveTab] = useState<TabType>('inProgress');
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [newMaterialTitle, setNewMaterialTitle] = useState('');
+  const [newMaterialDescription, setNewMaterialDescription] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creatingMaterial, setCreatingMaterial] = useState(false);
 
   // Xác định giao diện Sáng/Tối dựa trên màu nền để điều chỉnh màu chữ Dashboard
   const isLightMode = colors.background.toLowerCase() === '#f8fbf9' || colors.background.toLowerCase() === '#ffffff';
@@ -72,10 +81,45 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
     }, [user?.id])
   );
 
+  const openAddModal = () => {
+    setNewMaterialTitle('');
+    setNewMaterialDescription('');
+    setCreateError(null);
+    setAddModalVisible(true);
+  };
+
+  const closeAddModal = () => {
+    setAddModalVisible(false);
+    setCreateError(null);
+  };
+
+  const handleCreateMaterial = async () => {
+    if (!newMaterialTitle.trim()) {
+      setCreateError('Vui lòng nhập tên bộ từ vựng');
+      return;
+    }
+    if (!user?.id) {
+      setCreateError('Không tìm thấy người dùng');
+      return;
+    }
+
+    setCreatingMaterial(true);
+    try {
+      await createMaterial(Number(user.id), newMaterialTitle.trim(), newMaterialDescription.trim());
+      await loadData();
+      closeAddModal();
+    } catch (error) {
+      console.warn('Không tạo được bộ từ vựng', error);
+      setCreateError('Không tạo được bộ từ vựng. Vui lòng thử lại.');
+    } finally {
+      setCreatingMaterial(false);
+    }
+  };
+
   const stats = useMemo(() => {
     const all = materials.map((item) => {
-      const learned = item.learned_cards ?? 0;
-      const total = item.total_cards ?? 0;
+      const learned = item.completed_nodes ?? item.learned_cards ?? 0;
+      const total = item.total_nodes ?? item.total_cards ?? 0;
       const progress = total ? learned / total : 0;
       return { ...item, learned, total, progress, isFinished: progress >= 1 };
     });
@@ -119,6 +163,17 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
           }}
         />
 
+        <View style={styles.addMaterialRow}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.addMaterialButton, { backgroundColor: colors.primary }]}
+            onPress={openAddModal}
+          >
+            <Plus size={16} color="#fff" />
+            <Text style={styles.addMaterialText}>Thêm bộ từ vựng</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* DASHBOARD CARD - Đã tối ưu màu sắc */}
         <View style={[styles.dashboardCard, { backgroundColor: dashboardBg, borderColor: colors.border }] }>
           <View style={styles.statsMain}>
@@ -144,7 +199,7 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
           </View>
 
           <View style={[styles.streakSection, { borderLeftColor: isLightMode ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)' }]}>
-            <Flame size={26} color={isLightMode ? '#064E3B' : '#FFD02C'} />
+            <Flame size={26} color="#FFD02C" fill="#FFD02C" />
             <Text style={[styles.streakValue, { color: dashboardTextColor }]}>{streak}</Text>
             <Text style={[styles.streakLabel, { color: dashboardSubColor }]}>Ngày</Text>
           </View>
@@ -195,6 +250,62 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
       </ScrollView>
 
       <BottomNavigation activeTab="library" />
+
+      <Modal visible={addModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Tạo bộ từ vựng mới</Text>
+              <TouchableOpacity onPress={closeAddModal} style={styles.modalCloseBtn}>
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              value={newMaterialTitle}
+              onChangeText={(text) => {
+                setNewMaterialTitle(text);
+                setCreateError(null);
+              }}
+              placeholder="Tên bộ từ vựng"
+              placeholderTextColor={colors.textSecondary}
+              style={[styles.modalInput, { borderColor: colors.border, color: colors.text, backgroundColor: colors.background }]}
+            />
+            <TextInput
+              value={newMaterialDescription}
+              onChangeText={(text) => {
+                setNewMaterialDescription(text);
+                setCreateError(null);
+              }}
+              placeholder="Mô tả (tuỳ chọn)"
+              placeholderTextColor={colors.textSecondary}
+              style={[styles.modalInput, styles.modalTextarea, { borderColor: colors.border, color: colors.text, backgroundColor: colors.background }]}
+              multiline
+            />
+            {createError ? <Text style={styles.modalError}>{createError}</Text> : null}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.modalButton, { backgroundColor: colors.surfaceAlt }]}
+                onPress={closeAddModal}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.textSecondary }]}>Huỷ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                onPress={handleCreateMaterial}
+                disabled={creatingMaterial}
+              >
+                <Text style={[styles.modalButtonText, { color: '#fff' }]}>
+                  {creatingMaterial ? 'Đang tạo...' : 'Tạo'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -206,7 +317,13 @@ function StudyCardItem({ card, onPress, isDone }: any) {
   const { colors } = useTheme();
 
   return (
-    <TouchableOpacity activeOpacity={0.85} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={onPress}>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+      <TouchableOpacity
+        activeOpacity={0.85}
+        style={StyleSheet.absoluteFill}
+        onPress={onPress}
+      />
+
       <View style={[styles.cardIconBox, { backgroundColor: isDone ? colors.primary + '20' : colors.surfaceAlt }]}> 
         {isDone ? (
           <Trophy size={22} color={colors.primary} />
@@ -250,8 +367,8 @@ function StudyCardItem({ card, onPress, isDone }: any) {
         </View>
       </View>
 
-      <ChevronRight size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />
-    </TouchableOpacity>
+      <ChevronRight size={14} color={colors.textSecondary} style={{ marginLeft: 6, zIndex: 1 }} />
+    </View>
   );
 }
 
@@ -358,6 +475,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     alignItems: 'center',
     borderWidth: 1,
+    position: 'relative',
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.03, shadowRadius: 8 },
       android: { elevation: 2 },
@@ -420,6 +538,9 @@ const styles = StyleSheet.create({
   miniManager: {
     transform: [{ scale: 0.8 }],
     marginRight: -6,
+    overflow: 'visible',
+    alignSelf: 'flex-start',
+    zIndex: 10,
   },
   emptyState: {
     marginTop: 50,
@@ -428,5 +549,81 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  addMaterialRow: {
+    marginTop: 16,
+    marginBottom: 16,
+    alignItems: 'flex-start',
+  },
+  addMaterialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    gap: 8,
+  },
+  addMaterialText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    width: '100%',
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalCloseBtn: {
+    padding: 8,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+    fontSize: 14,
+  },
+  modalTextarea: {
+    minHeight: 90,
+    textAlignVertical: 'top',
+  },
+  modalError: {
+    color: '#FF4B4B',
+    marginBottom: 12,
+    fontSize: 13,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

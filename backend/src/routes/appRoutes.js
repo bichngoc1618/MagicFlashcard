@@ -24,8 +24,10 @@ import {
   completeQuizNode,
   getProfileAnalytics,
   getHomeWrongWords,
+  updateNodeIndex,
+  getLearnedCards,
 } from '../controllers/progressController.js';
-import { register, login } from '../controllers/authController.js';
+import { register, login, updateGamificationStats, refillHearts, deductHearts } from '../controllers/authController.js';
 import db from '../config/db.js';
 
 const router = express.Router();
@@ -39,7 +41,7 @@ router.delete('/flashcards/:flashcardId', deleteFlashcard);
 router.post('/materials/seed-default/:userId', seedDefaultMaterials);
 router.get('/study/journey/:materialId', getStudyJourney);
 router.get('/flashcards/:materialId', getFlashcards);
-router.get('/study/start/:materialId', startStudy);
+router.post('/study/start/:materialId', startStudy);
 router.post('/study/sync', syncStudy);
 router.get('/user/stats/:userId', getUserStats);
 router.post('/auth/register', register);
@@ -54,10 +56,15 @@ router.post('/progress/mark-learned', markCardLearned);
 router.post('/progress/update', markCardLearned);
 router.post('/progress/reset-batch', resetBatchProgress);
 router.get('/progress/quiz-progress/:userId/:materialId/:batchIndex/:quizStepType', getQuizProgress);
+router.get('/progress/learned-cards/:userId/:materialId', getLearnedCards);
 router.post('/progress/complete-quiz', completeQuizSession);
 router.post('/progress/save-quiz-answer', saveQuizAnswer);
+router.post('/progress/update-node-index', updateNodeIndex);
 router.post('/flashcard/complete', completeFlashcardBatch);
 router.post('/quiz/complete-node', completeQuizNode);
+router.post('/gamification/update', updateGamificationStats);
+router.post('/gamification/refill', refillHearts);
+router.post('/gamification/deduct', deductHearts);
 
 router.get('/chat/history', async (req, res) => {
   try {

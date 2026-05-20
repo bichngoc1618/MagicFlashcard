@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -7,13 +7,14 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { StackScreenProps } from '@react-navigation/stack';
-import { LineChart } from 'react-native-chart-kit';
-import { User, Mail, Sparkles, BookOpen, Clock3, TrendingUp, ChevronRight } from 'lucide-react-native';
+import { BarChart } from 'react-native-chart-kit';
+import { User, Mail, Sparkles, Flame, BookOpen, Clock3, ChevronRight, Award } from 'lucide-react-native';
 import * as Progress from 'react-native-progress';
-import { AuthContext } from '../context/AuthContext';
+import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../components/AppNavigator';
 import ScreenContainer from '../components/ScreenContainer';
@@ -33,16 +34,29 @@ type ProfileData = {
   email: string;
   totalXP: number;
   learnedVocabularyCount: number;
-  totalStudyDuration: number;
+  totalStudyDuration: number; // Đảm bảo lưu trữ dạng số nguyên
   averageAccuracy: number;
   quizTrend: QuizTrendPoint[];
   heatmap: Record<string, number>;
 };
 
-function formatDuration(seconds: number) {
+// 🛠️ HÀM FORMAT THỜI GIAN ĐÃ ĐƯỢC FIX LỖI TÍNH TOÁN
+function formatDuration(inputTime: number) {
+  if (!inputTime || inputTime <= 0) return '0p';
+  
+  // Tự động kiểm tra: Nếu số quá lớn (> 100,000,000), chứng tỏ backend đang trả về mili-giây, ta đổi về giây.
+  let seconds = inputTime;
+  if (inputTime > 10000000) {
+    seconds = Math.floor(inputTime / 1000);
+  }
+
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  return `${hours}h ${minutes}m`;
+  
+  if (hours > 0) {
+    return `${hours}g ${minutes}p`;
+  }
+  return `${minutes > 0 ? minutes : 1}p`; // Ít nhất hiển thị 1 phút nếu thời gian quá nhỏ
 }
 
 function buildHeatmapGrid(heatmap: Record<string, number | string>) {
@@ -81,12 +95,16 @@ async function fetchProfileData(userId: number): Promise<ProfileData> {
     }
 
     const payload = await response.json();
+    
+    // 🛠️ FIX KHỚP DATA BACKEND: Đọc hết các trường hợp đặt tên biến của server
+    const rawDuration = payload.total_study_duration ?? payload.totalStudyDuration ?? payload.study_time ?? payload.studyTime ?? 0;
+
     return {
       username: payload.username || 'Học viên',
       email: payload.email || 'demo@japanese.local',
       totalXP: Number(payload.total_xp ?? payload.totalXP ?? 0),
-      learnedVocabularyCount: Number(payload.learned_vocabulary_count ?? payload.learnedVocabularyCount ?? 0),
-      totalStudyDuration: Number(payload.total_study_duration ?? payload.totalStudyDuration ?? 0),
+      learnedVocabularyCount: Number(payload.learned_vocabulary_count ?? payload.learnedVocabularyCount ?? payload.vocab_count ?? 0),
+      totalStudyDuration: Number(rawDuration), 
       averageAccuracy: Number(payload.average_accuracy ?? payload.averageAccuracy ?? 0),
       quizTrend: Array.isArray(payload.quizTrend)
         ? payload.quizTrend.map((item: any) => normalizeQuizTrendItem(item))
@@ -109,14 +127,14 @@ async function fetchProfileData(userId: number): Promise<ProfileData> {
 }
 
 export default function ProfileScreen({ navigation }: ProfileScreenProps) {
-  const { user } = useContext(AuthContext);
+  const { user, streakCount } = useAuthContext();
   const { colors } = useTheme();
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [isReady, setIsReady] = useState(false);
 
   const levelInfo = useMemo(() => 
-    calculateLevelInfo(profileData?.totalXP ?? user?.total_xp ?? 0),
-    [profileData?.totalXP, user?.total_xp]
+    calculateLevelInfo(profileData?.totalXP ?? user?.totalXp ?? 0),
+    [profileData?.totalXP, user?.totalXp]
   );
 
   const dynamicStyles = useMemo(() => StyleSheet.create({
@@ -127,51 +145,45 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
       backgroundColor: colors.background,
     },
     scrollContent: {
-      paddingHorizontal: 24,
-      paddingBottom: 32,
+      paddingHorizontal: 20,
+      paddingTop: 24,
+      paddingBottom: 40,
       backgroundColor: colors.background,
     },
-    headerCard: {
+    profileCard: {
       backgroundColor: colors.card,
-      borderRadius: 28,
+      borderRadius: 32,
       padding: 24,
+      alignItems: 'center',
       marginBottom: 24,
       borderWidth: 1,
       borderColor: colors.border,
-      shadowColor: '#000',
-      shadowOpacity: 0.05,
-      shadowRadius: 10,
-      elevation: 2,
+      ...Platform.select({
+        ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.04, shadowRadius: 12 },
+        android: { elevation: 2 },
+      }),
     },
     username: {
-      fontSize: 22,
+      fontSize: 24,
       fontWeight: '900',
       color: colors.text,
       marginBottom: 4,
+      textAlign: 'center',
     },
     emailText: {
       color: colors.textSecondary,
-      fontSize: 13,
-    },
-    levelMainLabel: {
-      fontSize: 16,
-      fontWeight: '800',
-      color: colors.text,
-    },
-    xpDetailText: {
-      fontSize: 12,
-      fontWeight: '700',
-      color: colors.primary,
+      fontSize: 14,
+      fontWeight: '500',
     },
     xpRemainingText: {
-      fontSize: 11,
+      fontSize: 12,
+      fontWeight: '600',
       color: colors.textSecondary,
-      marginTop: 8,
+      marginTop: 10,
       textAlign: 'center',
-      fontStyle: 'italic',
     },
     sectionTitle: {
-      fontSize: 20,
+      fontSize: 18,
       fontWeight: '800',
       color: colors.text,
     }
@@ -201,8 +213,13 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     }, [loadProfileData]),
   );
 
+  const processedQuizTrend = useMemo(() => {
+    const rawTrend = profileData?.quizTrend ?? [];
+    return rawTrend.slice(-5); 
+  }, [profileData]);
+
   const chartLabels = useMemo(
-    () => (profileData?.quizTrend ?? []).map((point) => {
+    () => processedQuizTrend.map((point) => {
       const parsedTime = Date.parse(point.date);
       if (!Number.isNaN(parsedTime)) {
         const date = new Date(parsedTime);
@@ -210,40 +227,43 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
       }
       return point.date || '--';
     }),
-    [profileData],
+    [processedQuizTrend],
   );
 
-  const chartValues = useMemo(() => (profileData?.quizTrend ?? []).map((point) => point.score), [profileData]);
+  const chartValues = useMemo(() => processedQuizTrend.map((point) => point.score), [processedQuizTrend]);
   const heatmapData = useMemo(
     () => buildHeatmapGrid(profileData?.heatmap ?? {}),
     [profileData],
   );
 
+  const rgbPrimary = useMemo(() => {
+    const hex = colors.primary.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16) || 0;
+    const g = parseInt(hex.substring(2, 4), 16) || 0;
+    const b = parseInt(hex.substring(4, 6), 16) || 0;
+    return `${r}, ${g}, ${b}`;
+  }, [colors.primary]);
+
   const chartConfig = useMemo(() => ({
     backgroundGradientFrom: colors.card,
     backgroundGradientTo: colors.card,
     decimalPlaces: 0,
-    color: (opacity = 1) => colors.primary,
-    labelColor: (opacity = 1) => colors.textSecondary,
-    propsForDots: {
-      r: '5',
-      strokeWidth: '2',
-      stroke: colors.card,
+    color: (opacity = 1) => `rgba(${rgbPrimary}, ${Math.max(opacity, 0.2)})`,
+    labelColor: () => colors.textSecondary,
+    barPercentage: 0.5,
+    style: {
+      borderRadius: 24,
     },
     propsForBackgroundLines: {
       stroke: colors.border,
-      strokeDasharray: '',
+      strokeDasharray: '4',
+      strokeWidth: 1,
     },
-  }), [colors]);
-
-  // Temporarily comment out early return to debug hook issue
-  // if (!isReady) {
-  //   return (
-  //     <View style={dynamicStyles.loaderContainer}>
-  //       <ActivityIndicator color={colors.primary} size="large" />
-  //     </View>
-  //   );
-  // }
+    propsForLabels: {
+      fontSize: 10,
+      fontWeight: '600',
+    }
+  }), [colors, rgbPrimary]);
 
   return (
     <ScreenContainer>
@@ -254,119 +274,133 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
           </View>
         ) : (
           <>
-            <View style={dynamicStyles.headerCard}>
-              <View style={styles.headerInfo}>
-                <View style={[styles.avatarBadge, { backgroundColor: colors.surfaceAlt }]}>
-                  <User size={32} color={colors.primary} />
-                  <View style={[styles.levelBadgeMini, { borderColor: colors.card }]}>
-                    <Text style={[styles.levelBadgeText, { color: colors.primary }]}>{levelInfo.level}</Text>
-                  </View>
-                </View>
-                <View style={styles.headerText}>
-                  <Text style={dynamicStyles.username} numberOfLines={1}>{profileData?.username ?? user?.username ?? 'Học viên'}</Text>
-                  <View style={styles.emailRow}>
-                    <Mail size={14} color={colors.primary} />
-                    <Text style={dynamicStyles.emailText} numberOfLines={1}>{profileData?.email ?? user?.email ?? 'demo@japanese.local'}</Text>
-                  </View>
+            {/* THẺ THÔNG TIN TÀI KHOẢN */}
+            <View style={dynamicStyles.profileCard}>
+              <View style={[styles.avatarContainer, { backgroundColor: colors.surfaceAlt }]}>
+                <User size={38} color={colors.primary} />
+                <View style={[styles.levelBadgeMini, { backgroundColor: '#FFD02C', borderColor: colors.card }]}>
+                  <Text style={[styles.levelBadgeText, { color: '#000000' }]}>{levelInfo.level}</Text>
                 </View>
               </View>
 
-              <View style={[styles.levelSection, { borderTopColor: colors.border }]}>
+              <Text style={dynamicStyles.username} numberOfLines={1}>
+                {profileData?.username ?? user?.username ?? 'Học viên'}
+              </Text>
+
+              <View style={styles.emailRow}>
+                <Mail size={14} color={colors.textSecondary} />
+                <Text style={dynamicStyles.emailText} numberOfLines={1}>
+                  {profileData?.email ?? user?.email ?? 'demo@japanese.local'}
+                </Text>
+              </View>
+
+              {/* KHU VỰC TIẾN ĐỘ CẤP ĐỘ */}
+              <View style={[styles.levelSection, { borderColor: colors.border }]}>
                 <View style={styles.levelLabels}>
-                  <Text style={dynamicStyles.levelMainLabel}>Cấp độ {levelInfo.level}</Text>
-                  <Text style={dynamicStyles.xpDetailText}>
-                    {levelInfo.totalXp} / <Text style={{fontWeight: '900'}}>{levelInfo.nextLevelMinXp}</Text> XP
-                  </Text>
+                  <View style={styles.levelRow}>
+                    <Award size={16} color={colors.primary} style={{ marginRight: 4 }} />
+                    <Text style={[styles.levelMainLabel, { color: colors.text }]}>Cấp độ {levelInfo.level}</Text>
+                  </View>
+                  <View style={[styles.xpChip, { backgroundColor: colors.primary + '15' }]}>
+                    <Sparkles size={12} color={colors.primary} />
+                    <Text style={[styles.xpText, { color: colors.primary }]}>{profileData?.totalXP ?? 0} ĐIỂM XP</Text>
+                  </View>
                 </View>
-                <Progress.Bar 
-                  progress={levelInfo.progress} 
-                  width={null} 
-                  height={10}
+
+                <Progress.Bar
+                  progress={levelInfo.progress}
+                  height={8}
                   color={colors.primary}
-                  unfilledColor={colors.border}
+                  unfilledColor={colors.surfaceAlt}
                   borderWidth={0}
-                  borderRadius={10}
+                  borderRadius={8}
+                  width={Dimensions.get('window').width - 88}
                 />
                 <Text style={dynamicStyles.xpRemainingText}>
                   Còn {levelInfo.xpToNextLevel} XP nữa để lên cấp {levelInfo.level + 1} 🚀
                 </Text>
               </View>
-
-              <View style={[styles.xpChip, { backgroundColor: colors.primary }]}>
-                <Sparkles size={16} color="#FFFFFF" />
-                <Text style={styles.xpText}>{profileData?.totalXP ?? 0} XP</Text>
-              </View>
             </View>
 
+            {/* LƯỚI THỐNG KÊ TỔNG QUAN */}
             <View style={styles.statsRow}>
               <StatCard icon={<BookOpen size={20} color={colors.primary} />} label="Từ vựng" value={`${profileData?.learnedVocabularyCount ?? 0}`} colors={colors} />
-              <StatCard icon={<Clock3 size={20} color={colors.primary} />} label="Thời gian" value={formatDuration(profileData?.totalStudyDuration ?? 0)} colors={colors} />
-              <StatCard icon={<TrendingUp size={20} color={colors.primary} />} label="Độ chính xác" value={`${Math.round(profileData?.averageAccuracy ?? 0)}%`} colors={colors} />
+              
+              {/* 🛠️ CARD THỜI GIAN ĐÃ ĐƯỢC ĐẢM BẢO CONFIG ĐÚNG */}
+              <StatCard icon={<Clock3 size={20} color={colors.primary} />} label="Thời gian học" value={formatDuration(profileData?.totalStudyDuration ?? 0)} colors={colors} />
+              
+              <StatCard icon={<Flame size={20} color="#FFD02C" fill="#FFD02C" />} label="Chuỗi học" value={`${streakCount ?? 0} ngày`} colors={colors} />
             </View>
 
+            {/* TIÊU ĐỀ BIỂU ĐỒ QUIZ */}
             <View style={styles.sectionHeader}>
-              <Text style={dynamicStyles.sectionTitle}>Xu hướng Quiz</Text>
+              <Text style={dynamicStyles.sectionTitle}>Xu hướng kết quả</Text>
               <TouchableOpacity style={styles.sectionAction} onPress={() => navigation.goBack()} activeOpacity={0.7}>
                 <Text style={[styles.sectionActionText, { color: colors.primary }]}>Quay lại</Text>
                 <ChevronRight size={14} color={colors.primary} />
               </TouchableOpacity>
             </View>
 
-            <View style={[styles.chartCard, { backgroundColor: colors.card, borderColor: colors.border }] }>
+            {/* KHU VỰC BIỂU ĐỒ CỘT */}
+            <View style={[styles.chartCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               {chartValues.length > 0 ? (
-                <LineChart
+                <BarChart
                   data={{ labels: chartLabels, datasets: [{ data: chartValues }] }}
-                  width={Dimensions.get('window').width - 64}
+                  width={Dimensions.get('window').width - 48}
                   height={220}
                   chartConfig={chartConfig}
-                  bezier
                   style={styles.chartStyle}
-                  withVerticalLines={false}
+                  withInnerLines={true}
                   yAxisSuffix="%"
                   fromZero
-                  segments={4}
+                  showBarTops={false}
+                  flatColor={true}
+                  yAxisLabel=""
+                  verticalLabelRotation={0}
                 />
               ) : (
                 <View style={styles.emptyChartContainer}>
-                  <Text style={{ color: colors.textSecondary }}>Chưa có dữ liệu quiz.</Text>
+                  <Text style={{ color: colors.textSecondary, fontWeight: '500' }}>Chưa có dữ liệu kiểm tra gần đây.</Text>
                 </View>
               )}
             </View>
 
+            {/* LỊCH SỬ HOẠT ĐỘNG (HEATMAP) */}
             <View style={styles.sectionSubheader}>
               <Text style={[styles.statsSectionTitle, { color: colors.text }]}>Lịch sử học tập</Text>
-              <Text style={[styles.statsSectionDescription, { color: colors.textSecondary }]}>Tần suất học tập trong 28 ngày qua.</Text>
+              <Text style={[styles.statsSectionDescription, { color: colors.textSecondary }]}>Tần suất phân bổ hoạt động trong 28 ngày qua.</Text>
             </View>
 
-            <View style={[styles.heatmapCard, { backgroundColor: colors.card, borderColor: colors.border }] }>
+            <View style={[styles.heatmapCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.heatmapGrid}>
-                {heatmapData.map((item) => {
-                  const shade = Math.min(4, item.count);
-                  return (
-                    <View
-                      key={item.date}
-                      style={[
-                        styles.heatmapCell,
-                        shade === 0 && { backgroundColor: colors.border },
-                        shade === 1 && styles.heatmapLevel1,
-                        shade === 2 && styles.heatmapLevel2,
-                        shade === 3 && styles.heatmapLevel3,
-                        shade >= 4 && { backgroundColor: colors.primary },
-                      ]}
-                    />
-                  );
-                })}
+{heatmapData.map((item) => {
+  const shade = Math.min(4, item.count);
+  const zeroBg = colors.border ?? '#e0e0e0';
+  return (
+    <View
+      key={item.date}
+      style={[
+        styles.heatmapCell,
+        shade === 0 && { backgroundColor: zeroBg },
+        shade === 1 && { backgroundColor: colors.primary + '30' },
+        shade === 2 && { backgroundColor: colors.primary + '60' },
+        shade === 3 && { backgroundColor: colors.primary + 'A0' },
+        shade >= 4 && { backgroundColor: colors.primary },
+      ]}
+    />
+  );
+})}
               </View>
               <View style={styles.heatmapLegendRow}>
-                <Text style={styles.legendLabel}>Ít</Text>
+                <Text style={styles.legendLabel}>Ít hoạt động</Text>
                 <View style={styles.legendBoxes}>
-                  <View style={[styles.legendBox, { backgroundColor: colors.border }]} />
-                  <View style={[styles.legendBox, styles.heatmapLevel1]} />
-                  <View style={[styles.legendBox, styles.heatmapLevel2]} />
-                  <View style={[styles.legendBox, styles.heatmapLevel3]} />
+                  <View style={[styles.legendBox, { backgroundColor: colors.surfaceAlt }]} />
+                  <View style={[styles.legendBox, { backgroundColor: colors.primary + '30' }]} />
+                  <View style={[styles.legendBox, { backgroundColor: colors.primary + '60' }]} />
+                  <View style={[styles.legendBox, { backgroundColor: colors.primary + 'A0' }]} />
                   <View style={[styles.legendBox, { backgroundColor: colors.primary }]} />
                 </View>
-                <Text style={styles.legendLabel}>Nhiều</Text>
+                <Text style={styles.legendLabel}>Chăm chỉ</Text>
               </View>
             </View>
           </>
@@ -388,102 +422,104 @@ function StatCard({ icon, label, value, colors }: { icon: React.ReactNode; label
 }
 
 const styles = StyleSheet.create({
-  headerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  avatarBadge: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
+  avatarContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-  },
-  headerText: {
-    marginLeft: 16,
-    flex: 1,
+    marginBottom: 16,
   },
   emailRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 2,
+    marginTop: 4,
   },
   levelBadgeMini: {
     position: 'absolute',
     bottom: -4,
     right: -4,
-    backgroundColor: '#FFD02C',
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     zIndex: 10,
   },
   levelBadgeText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '900',
   },
   levelSection: {
-    marginTop: 8,
+    marginTop: 20,
     paddingTop: 16,
     borderTopWidth: 1,
-    marginBottom: 16,
+    width: '100%',
+  },
+  levelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   levelLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
+  },
+  levelMainLabel: {
+    fontSize: 15,
+    fontWeight: '800',
   },
   xpChip: {
-    alignSelf: 'flex-start',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
   },
   xpText: {
-    color: '#FFFFFF',
     fontWeight: '800',
-    marginLeft: 6,
-    fontSize: 13,
+    fontSize: 11,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 24,
-    gap: 10,
+    marginBottom: 28,
+    gap: 12,
   },
   statCard: {
     flex: 1,
     borderRadius: 24,
-    padding: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
     borderWidth: 1,
     alignItems: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.02, shadowRadius: 6 },
+      android: { elevation: 1 },
+    }),
   },
   statIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   statValue: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   statLabel: {
-    fontSize: 10,
+    fontSize: 11,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
     fontWeight: '700',
     textAlign: 'center',
   },
@@ -500,26 +536,28 @@ const styles = StyleSheet.create({
   sectionActionText: {
     fontSize: 13,
     fontWeight: '700',
-    marginRight: 4,
+    marginRight: 2,
   },
   chartCard: {
     borderRadius: 28,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    marginBottom: 24,
+    paddingVertical: 20,
+    paddingRight: 16,
+    paddingLeft: 4,
+    marginBottom: 28,
     borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   chartStyle: {
     borderRadius: 24,
   },
   emptyChartContainer: {
-    height: 180,
+    height: 160,
     justifyContent: 'center',
     alignItems: 'center',
   },
   sectionSubheader: {
-    marginBottom: 12,
+    marginBottom: 16,
   },
   statsSectionTitle: {
     fontSize: 18,
@@ -528,11 +566,12 @@ const styles = StyleSheet.create({
   },
   statsSectionDescription: {
     fontSize: 13,
+    fontWeight: '500',
   },
   heatmapCard: {
     borderRadius: 28,
     padding: 20,
-    marginBottom: 40,
+    marginBottom: 20,
     borderWidth: 1,
   },
   heatmapGrid: {
@@ -542,23 +581,20 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   heatmapCell: {
-    width: (Dimensions.get('window').width - 110) / 7,
-    height: 24,
-    borderRadius: 6,
+    width: (Dimensions.get('window').width - 104) / 7,
+    height: 26,
+    borderRadius: 7,
   },
-  heatmapLevel1: { backgroundColor: '#D7EAE4' },
-  heatmapLevel2: { backgroundColor: '#A7D3BE' },
-  heatmapLevel3: { backgroundColor: '#66B58E' },
   heatmapLegendRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 20,
+    marginTop: 16,
   },
   legendLabel: {
     fontSize: 12,
     fontWeight: '600',
-    opacity: 0.8,
+    opacity: 0.6,
   },
   legendBoxes: {
     flexDirection: 'row',
@@ -567,6 +603,6 @@ const styles = StyleSheet.create({
   legendBox: {
     width: 14,
     height: 14,
-    borderRadius: 3,
+    borderRadius: 4,
   },
 });

@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LayoutRectangle } from 'react-native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParamList } from '../components/AppNavigator';
-import { getFlashcards, updateProgress, saveQuizAnswer, completeQuizNode, syncStudy, getQuizProgress } from '../api/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFlashcards, updateProgress, completeQuizNode, syncStudy } from '../api/api';
 import type { QuizType, QuizWord, AnswerRecord } from '../components/quiz/types';
+import { chunkVocabulary } from '../utils/journeyMap';
 
-// Utility function to shuffle array
 function shuffle<T>(array: T[]): T[] {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -34,6 +35,7 @@ type UseQuizScreenParams = {
   sessionId?: string;
   user?: { id?: string | number };
   navigation: StackNavigationProp<RootStackParamList, 'Quiz'>;
+  deductHeartOnFailure?: () => Promise<void> | void;
 };
 
 type UseQuizScreenResult = {
@@ -63,7 +65,7 @@ type UseQuizScreenResult = {
   setChosenTileIds: React.Dispatch<React.SetStateAction<string[]>>;
   handleCancel: () => void;
   handleNextQuestion: () => void;
-  handleContinueQuestion: () => void;
+  handleContinueQuestion: (skipReview?: boolean | any) => void;
   handleRetry: () => void;
   handleContinue: () => void;
   reloadQuiz: () => void;
@@ -108,17 +110,18 @@ type UseQuizScreenResult = {
   isSubmitting: boolean;
   autoNextCountdown: number;
   canContinue: boolean;
+  showWrongPairsReview: boolean;
+  setShowWrongPairsReview: (show: boolean) => void;
+  proceedAfterReview: () => void;
 };
 
-const CHUNK_SIZE = 10;
-const MATCH_BATCH_SIZE = 5;
 const PRACTICE_STEPS: QuizType[] = ['MATCH_HIRA', 'MATCH_MEANING', 'MULTIPLE_CHOICE', 'SCRAMBLED_HIRA', 'WRITE_HIRA'];
 
 function getTimerForType(type: QuizType): number {
   switch (type) {
     case 'MATCH_HIRA':
     case 'MATCH_MEANING':
-      return 20;
+      return 15;
     case 'MULTIPLE_CHOICE':
       return 8;
     case 'SCRAMBLED_HIRA':
@@ -135,38 +138,26 @@ function buildMultipleChoiceOptions(word: QuizWord, pool: QuizWord[]) {
   return shuffle([word.meaning, ...distractors.map((item) => item.meaning)]);
 }
 
-function buildFinalBossQuestions(words: QuizWord[], min = 25, max = 30): QuizQuestion[] {
-  const count = Math.max(min, Math.min(max, Math.max(min, words.length)));
+function buildFinalBossQuestions(words: QuizWord[], nodeType: string): QuizQuestion[] {
+  const isBoss = nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM';
+  const maxCount = isBoss ? 50 : 25;
+  const count = Math.min(maxCount, words.length);
   const questions: QuizQuestion[] = [];
 
   const createQuestion = (word: QuizWord): QuizQuestion => {
-    const type = PRACTICE_STEPS[Math.floor(Math.random() * PRACTICE_STEPS.length)];
     const question: QuizQuestion = {
       word,
-      type,
+      type: 'MULTIPLE_CHOICE',
       batchIndex: 0,
     };
-
-    if (type === 'MATCH_MEANING' || type === 'MATCH_HIRA') {
-      question.pool = shuffle(words);
-    }
-
-    if (type === 'MULTIPLE_CHOICE') {
-      question.options = buildMultipleChoiceOptions(word, words);
-      question.correctAnswer = word.meaning;
-    }
-
+    question.options = buildMultipleChoiceOptions(word, words);
+    question.correctAnswer = word.meaning;
     return question;
   };
 
   words.forEach((word) => {
     questions.push(createQuestion(word));
   });
-
-  while (questions.length < count) {
-    const word = words[Math.floor(Math.random() * words.length)];
-    questions.push(createQuestion(word));
-  }
 
   return shuffle(questions).slice(0, count);
 }
@@ -211,6 +202,7 @@ export default function useQuizScreen({
   sessionId,
   user,
   navigation,
+  deductHeartOnFailure,
 }: UseQuizScreenParams): UseQuizScreenResult {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -246,6 +238,7 @@ export default function useQuizScreen({
   const [autoNextCountdown, setAutoNextCountdown] = useState(0);
   const [totalPairAttempts, setTotalPairAttempts] = useState(0);
   const [totalMatchedPairs, setTotalMatchedPairs] = useState(0);
+  const [showWrongPairsReview, setShowWrongPairsReview] = useState(false);
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoNextRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -290,7 +283,7 @@ export default function useQuizScreen({
     } finally {
       setIsLoading(false);
     }
-  }, [materialId]);
+  }, [materialId, user?.id]);
 
   useEffect(() => {
     if (materialId <= 0) {
@@ -301,74 +294,39 @@ export default function useQuizScreen({
     loadFlashcards();
   }, [materialId, loadFlashcards, reloadToggle]);
 
-  const batchWords = useMemo(() => {
+  const batchWords = useMemo<QuizWord[]>(() => {
     if (words.length === 0) return [];
 
-    if (nodeType === 'MINI_QUIZ') {
-      const start = batchIndex * CHUNK_SIZE;
-      return words.slice(start, start + CHUNK_SIZE);
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
+      return shuffle(words).slice(0, Math.min(words.length, 50));
     }
 
     if (nodeType === 'REVIEW') {
-      return words.slice(0, Math.min(words.length, 25));
+      const chunks = chunkVocabulary(words as any);
+      const prevChunk = batchIndex > 0 ? chunks[batchIndex - 1] || [] : [];
+      const currentChunk = chunks[batchIndex] || [];
+      const combined = [...prevChunk, ...currentChunk] as QuizWord[];
+      return shuffle(combined).slice(0, Math.min(combined.length, 25));
     }
 
-    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
-      return shuffle(words).slice(0, Math.min(words.length, 30));
-    }
-
-    return words;
+    const chunks = chunkVocabulary(words as any);
+    const chunk = chunks[batchIndex] || [];
+    return chunk as QuizWord[];
   }, [words, nodeType, batchIndex]);
 
-  const effectiveQuizType: QuizType = PRACTICE_STEPS[currentStep] || 'MULTIPLE_CHOICE';
+  const effectiveQuizType: QuizType = quizStepType || PRACTICE_STEPS[currentStep] || 'MULTIPLE_CHOICE';
 
   const questions = useMemo(() => {
-    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
-      return buildFinalBossQuestions(batchWords);
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'REVIEW') {
+      return buildFinalBossQuestions(batchWords, nodeType);
     }
     return buildQuizQuestions(batchWords, effectiveQuizType, batchIndex);
   }, [batchWords, effectiveQuizType, batchIndex, nodeType]);
 
-  const loadQuizProgress = useCallback(async () => {
-    if (!user?.id || materialId <= 0 || !quizStepType) return;
-
-    try {
-      const response = await getQuizProgress({
-        userId: Number(user.id),
-        materialId,
-        batchIndex,
-        quizStepType,
-      });
-
-      const answered = (response.answers || []).filter(
-        (item: { questionIndex: number; isCorrect: boolean }) =>
-          item.questionIndex >= 0 && item.questionIndex < questions.length
-      );
-
-      const filledAnswers = answered.map((item: any) => ({
-        wordId: questions[item.questionIndex].word.id,
-        type: questions[item.questionIndex].type,
-        isCorrect: item.isCorrect,
-        word: questions[item.questionIndex].word,
-      }));
-
-      const nextIndex = answered.reduce((index: number, item: any) => Math.max(index, item.questionIndex + 1), 0);
-      setResumeAnswers(filledAnswers);
-      setResumeIndex(Math.min(nextIndex, questions.length));
-    } catch (error) {
-      console.warn('Lỗi lấy tiến độ quiz:', error);
-    }
-  }, [user?.id, materialId, batchIndex, quizStepType, questions]);
-
   useEffect(() => {
-    if (!questions.length) return;
-    loadQuizProgress();
-  }, [questions, loadQuizProgress]);
-
-  useEffect(() => {
-    setCurrentIndex(resumeIndex);
-    setAnswers(resumeAnswers);
-  }, [resumeIndex, resumeAnswers]);
+    setCurrentIndex(0);
+    setAnswers([]);
+  }, [questions]);
 
   useEffect(() => {
     clearAutoNextTimer();
@@ -389,61 +347,11 @@ export default function useQuizScreen({
     setTimerSeconds(getTimerForType(effectiveQuizType));
     setFeedbackMessage(null);
     setIsSubmitting(false);
+    setShowWrongPairsReview(false);
   }, [currentIndex, questions.length, clearTimer, effectiveQuizType, clearAutoNextTimer]);
 
-  const onSaveAnswerInternal = useCallback(async (questionIndex: number, question: QuizQuestion, isCorrectValue: boolean) => {
-    if (!user?.id || materialId <= 0 || !quizStepType) return;
-
-    try {
-      await saveQuizAnswer({
-        userId: Number(user.id),
-        materialId,
-        batchIndex,
-        questionIndex,
-        quizStepType,
-        isCorrect: isCorrectValue,
-      });
-    } catch (error) {
-      console.warn('Lỗi lưu câu hỏi quiz:', error);
-    }
-  }, [user?.id, materialId, batchIndex, quizStepType]);
-
-  const completeQuiz = useCallback(async (result: { answers: AnswerRecord[]; correctCount: number; totalCount: number }) => {
-    if (!user?.id || materialId <= 0) {
-      navigation.goBack();
-      return;
-    }
-
-    try {
-      await completeQuizNode({
-        userId: Number(user.id),
-        materialId,
-        nodeId,
-        sessionType: quizStepType || nodeType || 'QUIZ',
-        batchIndex,
-        totalQuestions: result.totalCount,
-        correctAnswers: result.correctCount,
-      });
-    } catch (error) {
-      console.warn('Lỗi hoàn thành quiz:', error);
-    }
-
-    try {
-      await syncStudy({
-        userId: user.id,
-        materialId,
-        currentNodeIndex: typeof currentNodeIndex === 'number' ? currentNodeIndex + 1 : undefined,
-        sessionId,
-      });
-    } catch (error) {
-      console.warn('Lỗi đồng bộ lộ trình sau khi hoàn thành quiz:', error);
-    }
-
-    navigation.navigate('StudyJourney', {
-      materialId,
-      completedNodeId: nodeId,
-    });
-  }, [user?.id, materialId, nodeId, quizStepType, nodeType, batchIndex, currentNodeIndex, sessionId, navigation]);
+  // CRITICAL FIX 2: Loại bỏ hàm completeQuiz chứa lệnh rẽ nhánh tự hủy goBack ngầm.
+  // Tiến trình chuyển trang ra Map bây giờ sẽ do file cha QuizScreen điều phối 100%.
 
   const handleSaveAnswer = useCallback(async (questionIndex: number, question: QuizQuestion, correct: boolean) => {
     const nextAnswers = [...answers];
@@ -462,26 +370,21 @@ export default function useQuizScreen({
 
     setAnswers(nextAnswers);
 
-    // Cập nhật stepAnswers
     setStepAnswers((prev) => {
       const next = [...prev];
       if (!next[currentStep]) next[currentStep] = [];
       next[currentStep][questionIndex] = answerRecord;
       return next;
     });
-
-    await onSaveAnswerInternal(questionIndex, question, correct);
-  }, [answers, currentStep, onSaveAnswerInternal]);
+  }, [answers, currentStep]);
 
   const handleCheck = useCallback(async (correct: boolean) => {
-    console.log('handleCheck called with correct:', correct);
     const questionIndex = currentIndex;
     const question = questions[questionIndex];
     if (!question) return;
 
     setFeedbackMessage(null);
     setIsSubmitting(true);
-    console.log('Setting isCorrect to:', correct);
     setIsCorrect(correct);
 
     try {
@@ -505,14 +408,11 @@ export default function useQuizScreen({
   }, [currentIndex, questions, handleSaveAnswer, materialId, user?.id]);
 
   const handleNextQuestion = useCallback(() => {
-    console.log('handleNextQuestion called, currentIndex:', currentIndex, 'totalCount:', questions.length);
     const totalCount = questions.length;
     if (currentIndex + 1 >= totalCount) {
-      console.log('Setting showResult to true');
       setShowResult(true);
       return;
     }
-    console.log('Setting currentIndex to:', currentIndex + 1);
     setCurrentIndex((prev) => prev + 1);
   }, [currentIndex, questions.length]);
 
@@ -530,45 +430,6 @@ export default function useQuizScreen({
     return stepAns.length > 0 ? (correct / stepAns.length) * 100 : 0;
   }, [stepAnswers, currentStep]);
 
-  const handleContinue = useCallback(async () => {
-    if (currentStep < PRACTICE_STEPS.length - 1 && stepScore < 80) {
-      return;
-    }
-
-    if (currentStep < PRACTICE_STEPS.length - 1) {
-      // Lưu tiến độ step hiện tại trước khi chuyển
-      if (user?.id && materialId > 0) {
-        try {
-          await syncStudy({
-            userId: user.id,
-            materialId,
-            currentNodeIndex: currentNodeIndex,
-            sessionId,
-            quizStepType: PRACTICE_STEPS[currentStep],
-            stepScore: stepScore,
-          });
-        } catch (error) {
-          console.warn('Lỗi lưu tiến độ step:', error);
-        }
-      }
-
-      // Chuyển sang step tiếp theo
-      setCurrentStep((prev) => prev + 1);
-      setCurrentIndex(0);
-      setAnswers([]);
-      setShowResult(false);
-      setResumeIndex(0);
-      setResumeAnswers([]);
-    } else {
-      // Hoàn thành tất cả steps
-      completeQuiz({
-        answers,
-        correctCount: answers.filter((item) => item.isCorrect).length,
-        totalCount: questions.length,
-      });
-    }
-  }, [currentStep, answers, completeQuiz, questions.length, stepScore, user?.id, materialId, currentNodeIndex, sessionId]);
-
   const totalCount = questions.length;
   const questionIndex = totalCount > 0 ? Math.min(currentIndex, totalCount - 1) : 0;
   const currentQuestion = questions[questionIndex];
@@ -576,13 +437,20 @@ export default function useQuizScreen({
   const activeType = currentQuestion?.type;
   const correctCount = answers.filter((item) => item.isCorrect).length;
   const score = totalCount ? (correctCount / totalCount) * 100 : 0;
-  const stepProgress = totalCount ? (questionIndex / totalCount) * 100 : 0;
   const isBoss = nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM';
 
   const tiles = useMemo(() => {
     if (!currentWord || !currentWord.hiragana || activeType !== 'SCRAMBLED_HIRA') return [];
-    return currentWord.hiragana
-      .split('')
+    
+    const chars = currentWord.hiragana.split('');
+    const noiseCount = Math.floor(Math.random() * 2) + 4;
+    const hiraganaAlphabet = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめ moやゆよらりるれろわをん";
+    const noiseChars = [];
+    for (let i = 0; i < noiseCount; i++) {
+        noiseChars.push(hiraganaAlphabet[Math.floor(Math.random() * hiraganaAlphabet.length)]);
+    }
+
+    return [...chars, ...noiseChars]
       .map((char, index) => ({ id: `${index}-${char}`, char }))
       .sort(() => Math.random() - 0.5);
   }, [currentWord, activeType]);
@@ -592,16 +460,24 @@ export default function useQuizScreen({
     [chosenTileIds, tiles]
   );
 
-  const matchWords = useMemo(() => {
+  const matchWords = useMemo<QuizWord[]>(() => {
     if (!currentQuestion || (activeType !== 'MATCH_MEANING' && activeType !== 'MATCH_HIRA')) return [];
     return currentQuestion.pool ? currentQuestion.pool : shuffle(batchWords);
   }, [currentQuestion, batchWords, activeType]);
 
-  const matchRoundCount = Math.max(1, Math.ceil(matchWords.length / MATCH_BATCH_SIZE));
-  const currentMatchWords = useMemo(
-    () => matchWords.slice(matchRound * MATCH_BATCH_SIZE, (matchRound + 1) * MATCH_BATCH_SIZE),
-    [matchRound, matchWords]
-  );
+  const matchRoundCount = matchWords.length < 7 ? 1 : 2;
+  const currentMatchWords = useMemo<QuizWord[]>(() => {
+    if (matchWords.length === 0) return [];
+    if (matchRoundCount === 1) return matchWords;
+    if (matchWords.length <= 1) return matchWords;
+    
+    const half = Math.ceil(matchWords.length / 2);
+    if (matchRound === 0) {
+      return matchWords.slice(0, half);
+    } else {
+      return matchWords.slice(half);
+    }
+  }, [matchRound, matchWords, matchRoundCount]);
 
   const currentMatchRightItems = useMemo(
     () =>
@@ -618,28 +494,22 @@ export default function useQuizScreen({
   const pairedRightIds = useMemo(() => new Set(Object.values(pairAssignments)), [pairAssignments]);
 
   const isMatchMode = activeType === 'MATCH_MEANING' || activeType === 'MATCH_HIRA';
+  const stepProgress = isMatchMode ? (matchRound / matchRoundCount) * 100 : (totalCount ? (questionIndex / totalCount) * 100 : 0);
   const totalMatchCount = matchWords.length;
   const isMatchComplete = isMatchMode && currentMatchWords.length > 0 && Object.keys(pairAssignments).length === currentMatchWords.length;
-  const currentBatchMatchScore =
-    pairAttempts === 0 ? 0 : Math.round((matchedIds.size / pairAttempts) * 100);
+  const currentBatchMatchScore = pairAttempts === 0 ? 0 : Math.round((matchedIds.size / pairAttempts) * 100);
   const overallMatchScore = totalPairAttempts === 0 ? 0 : Math.round((totalMatchedPairs / totalPairAttempts) * 100);
 
   const isTimerRunning = !showResult && isCorrect === null && !hasSubmitted;
 
-  console.log('useQuizScreen isTimerRunning:', isTimerRunning, 'timerSeconds:', timerSeconds, 'isCorrect:', isCorrect, 'hasSubmitted:', hasSubmitted);
-
   useEffect(() => {
-    console.log('Timer useEffect running, isTimerRunning:', isTimerRunning);
     if (!isTimerRunning) {
       clearTimer();
       return;
     }
 
-    console.log('Setting timer interval');
     timerRef.current = setInterval(() => {
-      console.log('Timer tick, current timerSeconds:', timerSeconds);
       setTimerSeconds((prev) => {
-        console.log('setTimerSeconds prev:', prev);
         if (prev <= 1) {
           clearTimer();
           return 0;
@@ -649,7 +519,6 @@ export default function useQuizScreen({
     }, 1000);
 
     return () => {
-      console.log('Cleaning up timer');
       clearTimer();
     };
   }, [isTimerRunning, clearTimer, currentIndex]);
@@ -695,14 +564,14 @@ export default function useQuizScreen({
         ? Math.round((correctCount / currentMatchWords.length) * 100)
         : 0;
 
-      const passed = score >= 80;
+      const passed = score >= 70;
 
       setWrongPairs(nextWrongPairs);
       setMatchedIds(nextMatchedIds);
       setMatchRoundScore(score);
       setHasSubmitted(true);
       setIsCorrect(passed);
-      setFeedbackMessage(passed ? 'Đạt yêu cầu!' : 'Chưa đạt 80%, làm lại đợt này nhé.');
+      setFeedbackMessage(passed ? 'Đạt yêu cầu!' : 'Chưa đạt 70%, làm lại đợt này nhé.');
 
       if (passed && matchRound === matchRoundCount - 1) {
         handleCheckAnswer(true, 'MATCH_COMPLETE');
@@ -755,15 +624,14 @@ export default function useQuizScreen({
     handleTimerExpire();
   }, [handleTimerExpire, isTimerRunning, timerSeconds]);
 
-  // Auto-next countdown: Sau 3 giây khi hiển thị đáp án, tự động chuyển câu
   useEffect(() => {
     clearAutoNextTimer();
     
+    // CRITICAL FIX 3: Ngăn chặn bộ hẹn giờ đếm ngược chạy ngầm khi màn hình kết quả đã mở ra
     if (isCorrect === null || showResult || isMatchMode) {
       return;
     }
 
-    // Bắt đầu countdown 3 giây
     setAutoNextCountdown(3);
     autoNextRef.current = setInterval(() => {
       setAutoNextCountdown((prev) => {
@@ -779,7 +647,7 @@ export default function useQuizScreen({
     return () => {
       clearAutoNextTimer();
     };
-  }, [isCorrect, showResult, isMatchMode, handleNextQuestion, clearAutoNextTimer]);
+  }, [isCorrect, showResult, isMatchMode, handleNextQuestion, clearAutoNextTimer, currentIndex]);
 
   const resetCurrentMatchBatch = useCallback(() => {
     setMatchedIds(new Set());
@@ -797,47 +665,6 @@ export default function useQuizScreen({
     setFeedbackMessage(null);
     setTimerSeconds(getTimerForType(effectiveQuizType));
   }, [effectiveQuizType]);
-
-  const handleContinueQuestion = useCallback(async () => {
-    if (isMatchMode && hasSubmitted) {
-      if (isCorrect) {
-        if (matchRound + 1 < matchRoundCount) {
-          setMatchRound((prev) => prev + 1);
-          resetCurrentMatchBatch();
-          return;
-        }
-
-        if (currentQuestion) {
-          const existingAnswer = answers[currentIndex];
-          if (!existingAnswer || existingAnswer.wordId !== currentQuestion.word.id) {
-            await handleSaveAnswer(currentIndex, currentQuestion, true);
-          }
-        }
-
-        setShowResult(true);
-        return;
-      }
-
-      if (currentQuestion) {
-        await handleSaveAnswer(currentIndex, currentQuestion, false);
-      }
-      setShowResult(true);
-      return;
-    }
-    handleNextQuestion();
-  }, [
-    answers,
-    currentIndex,
-    currentQuestion,
-    handleNextQuestion,
-    handleSaveAnswer,
-    hasSubmitted,
-    isCorrect,
-    isMatchMode,
-    matchRound,
-    matchRoundCount,
-    resetCurrentMatchBatch,
-  ]);
 
   const resetMatchStateForQuestion = useCallback(() => {
     setMatchRound(0);
@@ -858,6 +685,51 @@ export default function useQuizScreen({
     setFeedbackMessage(null);
     setTimerSeconds(getTimerForType(effectiveQuizType));
   }, [effectiveQuizType]);
+
+  const proceedAfterReview = useCallback(() => {
+    setShowWrongPairsReview(false);
+    if (isCorrect) {
+      if (matchRound + 1 < matchRoundCount) {
+        setMatchRound((prev) => prev + 1);
+        resetCurrentMatchBatch();
+      } else {
+        setShowResult(true);
+      }
+    } else {
+      resetMatchStateForQuestion();
+    }
+  }, [isCorrect, matchRound, matchRoundCount, resetCurrentMatchBatch, resetMatchStateForQuestion]);
+
+  const handleContinueQuestion = useCallback(async (skipReview?: boolean | any) => {
+    const shouldSkipReview = skipReview === true;
+
+    if (isMatchMode && hasSubmitted) {
+      if (!shouldSkipReview && wrongPairs.size > 0) {
+        setShowWrongPairsReview(true);
+        return;
+      }
+
+      if (isCorrect) {
+        if (matchRound + 1 < matchRoundCount) {
+          setMatchRound((prev) => prev + 1);
+          resetCurrentMatchBatch();
+          return;
+        }
+        if (currentQuestion) {
+          await handleSaveAnswer(currentIndex, currentQuestion, true);
+        }
+        setShowResult(true);
+        return;
+      }
+
+      if (currentQuestion) {
+        await handleSaveAnswer(currentIndex, currentQuestion, false);
+      }
+      setShowResult(true);
+      return;
+    }
+    handleNextQuestion();
+  }, [currentIndex, currentQuestion, handleNextQuestion, handleSaveAnswer, hasSubmitted, isCorrect, isMatchMode, matchRound, matchRoundCount, resetCurrentMatchBatch, wrongPairs.size]);
 
   const handleRetry = useCallback(() => {
     setCurrentIndex(0);
@@ -927,6 +799,43 @@ export default function useQuizScreen({
     resetMatchStateForQuestion();
     setIsCorrect(null);
   }, [resetMatchStateForQuestion]);
+
+  // CRITICAL FIX 4: Thay đổi cơ chế chuyển Step. Khi hoàn thành toàn bộ bài,
+  // hook CHỈ làm duy nhất một việc là chuyển trạng thái showResult sang TRUE.
+  // Tuyệt đối không tự kích hoạt navigation sang màn hình khác.
+  const handleContinue = useCallback(async () => {
+    const threshold = isMatchMode ? 70 : 80;
+    if (!quizStepType && currentStep < PRACTICE_STEPS.length - 1 && stepScore < threshold) {
+      return;
+    }
+
+    if (!quizStepType && currentStep < PRACTICE_STEPS.length - 1) {
+      if (user?.id && materialId > 0) {
+        try {
+          await syncStudy({
+            userId: user.id,
+            materialId,
+            currentNodeIndex: currentNodeIndex,
+            sessionId,
+            quizStepType: PRACTICE_STEPS[currentStep],
+            stepScore: stepScore,
+          });
+        } catch (error) {
+          console.warn('Lỗi lưu tiến độ step:', error);
+        }
+      }
+
+      setCurrentStep((prev) => prev + 1);
+      setCurrentIndex(0);
+      setAnswers([]);
+      setShowResult(false);
+      setResumeIndex(0);
+      setResumeAnswers([]);
+    } else {
+      // Khi học xong bài test cuối cùng, gán biến cờ kết quả để file cha xử lý
+      setShowResult(true);
+    }
+  }, [quizStepType, currentStep, answers, questions.length, stepScore, user?.id, materialId, currentNodeIndex, sessionId, isMatchMode, matchScore]);
 
   return {
     isLoading,
@@ -998,7 +907,10 @@ export default function useQuizScreen({
     handleResetMatchState,
     feedbackMessage,
     isSubmitting,
-    canContinue: stepScore >= 80,
+    canContinue: (isMatchMode ? matchScore : stepScore) >= 70,
     autoNextCountdown,
+    showWrongPairsReview,
+    setShowWrongPairsReview,
+    proceedAfterReview,
   };
 }

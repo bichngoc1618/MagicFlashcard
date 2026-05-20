@@ -1,12 +1,223 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Alert } from 'react-native';
-import { X, CheckCircle2, AlertCircle, Trophy, Eye } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Alert, Image } from 'react-native';
+import { X, CheckCircle2, AlertCircle, Trophy, Eye, Heart, Flame } from 'lucide-react-native';
 import ConfettiCannon from 'react-native-confetti-cannon';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withDelay, withSequence, withRepeat, interpolate, Easing, runOnJS } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import ScreenContainer from '../ScreenContainer';
 import { useTheme } from '../../context/ThemeContext';
+import { AuthContext, useAuthContext } from '../../context/AuthContext';
 import type { AnswerRecord } from './types';
 
 const { width } = Dimensions.get('window');
+
+const useStreakCelebrationAnimation = (visible: boolean) => {
+  const scale = useSharedValue(0);
+  const sway = useSharedValue(0);
+  const subtitleOpacity = useSharedValue(0);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const collapseScale = useSharedValue(1);
+  const opacity = useSharedValue(1);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    const runHaptics = async () => {
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      } catch (error) {
+        console.warn('Streak celebration haptics failed:', error);
+      }
+    };
+
+    runHaptics();
+
+    scale.value = withSpring(1.4, { stiffness: 120, damping: 6 });
+    sway.value = withRepeat(
+      withTiming(1, { duration: 700, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+    subtitleOpacity.value = withDelay(300, withTiming(1, { duration: 240, easing: Easing.out(Easing.quad) }));
+
+    translateX.value = withDelay(
+      1200,
+      withTiming(width * 0.32, { duration: 400, easing: Easing.inOut(Easing.quad) })
+    );
+    translateY.value = withDelay(
+      1200,
+      withTiming(-180, { duration: 400, easing: Easing.out(Easing.cubic) })
+    );
+    collapseScale.value = withDelay(1200, withTiming(0.2, { duration: 400, easing: Easing.inOut(Easing.quad) }));
+    opacity.value = withDelay(1200, withTiming(0, { duration: 400, easing: Easing.linear }));
+  }, [visible]);
+
+  const widgetStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value * collapseScale.value },
+      { rotate: `${interpolate(sway.value, [0, 1], [-5, 5])}deg` },
+    ],
+    opacity: opacity.value,
+  }));
+
+  const subtitleStyle = useAnimatedStyle(() => ({
+    opacity: subtitleOpacity.value,
+  }));
+
+  return { widgetStyle, subtitleStyle };
+};
+
+const StreakCelebration = ({ visible, streakCount }: { visible: boolean; streakCount: number }) => {
+  const { widgetStyle, subtitleStyle } = useStreakCelebrationAnimation(visible);
+  if (!visible) return null;
+
+  return (
+    <View pointerEvents="none" style={styles.celebrationAbsoluteWrapper}>
+      <Animated.View style={[styles.celebrationWidget, widgetStyle]}>
+        <Flame size={80} color="#FFD02C" fill="#FFD02C" />
+        <View style={styles.verticalTextChain}>
+          {['+1', 'N', 'G', 'À', 'Y'].map((letter, index) => (
+            <Text key={index} style={styles.verticalText}>
+              {letter}
+            </Text>
+          ))}
+        </View>
+        <Animated.Text style={[styles.flameSubtitle, subtitleStyle]}>{`Chuỗi ${streakCount} ngày`}</Animated.Text>
+      </Animated.View>
+    </View>
+  );
+};
+
+const ShatteredHeartAnim = () => {
+  const mascotScale = useSharedValue(0.5);
+  const heartScale = useSharedValue(0);
+  const heartOpacity = useSharedValue(1);
+  
+  // Multiple shards flying in different directions
+  const shard1X = useSharedValue(0);
+  const shard1Y = useSharedValue(0);
+  const shard2X = useSharedValue(0);
+  const shard2Y = useSharedValue(0);
+  const shard3X = useSharedValue(0);
+  const shard3Y = useSharedValue(0);
+  const shard4X = useSharedValue(0);
+  const shard4Y = useSharedValue(0);
+  const shardRotate = useSharedValue(0);
+
+  const triggerShardExplosion = () => {
+    shard1X.value = withTiming(-40, { duration: 500 });
+    shard1Y.value = withTiming(-50, { duration: 500 });
+    
+    shard2X.value = withTiming(40, { duration: 500 });
+    shard2Y.value = withTiming(-50, { duration: 500 });
+    
+    shard3X.value = withTiming(-30, { duration: 500 });
+    shard3Y.value = withTiming(30, { duration: 500 });
+    
+    shard4X.value = withTiming(30, { duration: 500 });
+    shard4Y.value = withTiming(30, { duration: 500 });
+    
+    shardRotate.value = withTiming(360, { duration: 500 });
+    
+    heartOpacity.value = withTiming(0, { duration: 500 });
+  };
+
+  useEffect(() => {
+    // Step 2: Mascot pops up (Spring 0.5 -> 1.0) starting at 200ms
+    setTimeout(() => {
+      mascotScale.value = withSpring(1.0, { damping: 10, stiffness: 100 });
+      
+      // Heart appears, shrinks, then bursts
+      heartScale.value = withSequence(
+        withTiming(1.0, { duration: 100 }), // Appear quickly
+        withTiming(0.9, { duration: 100 }), // Shrink (accumulating energy)
+        withSpring(1.2, { damping: 3 }, () => {
+          // Trigger shard explosion
+          runOnJS(triggerShardExplosion)();
+        })
+      );
+    }, 200);
+  }, []);
+
+  const mascotStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: mascotScale.value }]
+  }));
+
+  const heartStyle = useAnimatedStyle(() => ({
+    opacity: heartOpacity.value,
+    transform: [{ scale: heartScale.value }]
+  }));
+
+  const shard1Style = useAnimatedStyle(() => ({
+    opacity: heartOpacity.value,
+    transform: [
+      { translateX: shard1X.value },
+      { translateY: shard1Y.value },
+      { rotate: `${shardRotate.value}deg` }
+    ]
+  }));
+
+  const shard2Style = useAnimatedStyle(() => ({
+    opacity: heartOpacity.value,
+    transform: [
+      { translateX: shard2X.value },
+      { translateY: shard2Y.value },
+      { rotate: `${-shardRotate.value}deg` }
+    ]
+  }));
+
+  const shard3Style = useAnimatedStyle(() => ({
+    opacity: heartOpacity.value,
+    transform: [
+      { translateX: shard3X.value },
+      { translateY: shard3Y.value },
+      { rotate: `${shardRotate.value * 0.8}deg` }
+    ]
+  }));
+
+  const shard4Style = useAnimatedStyle(() => ({
+    opacity: heartOpacity.value,
+    transform: [
+      { translateX: shard4X.value },
+      { translateY: shard4Y.value },
+      { rotate: `${-shardRotate.value * 0.8}deg` }
+    ]
+  }));
+
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+      <Animated.Image 
+        source={require('../../../assets/sharkCry.png')} 
+        style={[{ width: 140, height: 140 }, mascotStyle]} 
+      />
+      
+      {/* Floating Heart - Center */}
+      <Animated.View style={[{ position: 'absolute', top: -40 }, heartStyle]}>
+        <Heart size={80} color="#FF4B4B" fill="#FF4B4B" />
+      </Animated.View>
+      
+      {/* Shattered Heart Pieces */}
+      <Animated.View style={[{ position: 'absolute', top: -40 }, shard1Style]}>
+        <Heart size={24} color="#FF4B4B" fill="#FF4B4B" opacity={0.8} />
+      </Animated.View>
+      
+      <Animated.View style={[{ position: 'absolute', top: -40 }, shard2Style]}>
+        <Heart size={24} color="#FF4B4B" fill="#FF4B4B" opacity={0.8} />
+      </Animated.View>
+      
+      <Animated.View style={[{ position: 'absolute', top: -40 }, shard3Style]}>
+        <Heart size={20} color="#FF4B4B" fill="#FF4B4B" opacity={0.7} />
+      </Animated.View>
+      
+      <Animated.View style={[{ position: 'absolute', top: -40 }, shard4Style]}>
+        <Heart size={20} color="#FF4B4B" fill="#FF4B4B" opacity={0.7} />
+      </Animated.View>
+    </View>
+  );
+};
 
 interface ResultScreenProps {
   score: number;
@@ -31,10 +242,13 @@ export default function ResultScreen({
   onContinue,
   canContinue,
 }: ResultScreenProps) {
+  const authContext = useAuthContext();
+  const streakCount = authContext?.streakCount ?? 0;
   const [showingFailed, setShowingFailed] = useState(false);
   const [reviewIndex, setReviewIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
   const { colors } = useTheme();
   const failedAnswers = answers.filter((ans) => !ans.isCorrect);
   const currentFailed = failedAnswers[reviewIndex];
@@ -67,12 +281,19 @@ export default function ResultScreen({
   useEffect(() => {
     if (!passedThreshold) {
       setShowConfetti(false);
+      setShowCelebration(false);
       return;
     }
 
     setShowConfetti(true);
-    const timer = setTimeout(() => setShowConfetti(false), 3000);
-    return () => clearTimeout(timer);
+    setShowCelebration(true);
+    const confettiTimer = setTimeout(() => setShowConfetti(false), 3000);
+    const celebrationTimer = setTimeout(() => setShowCelebration(false), 1800);
+
+    return () => {
+      clearTimeout(confettiTimer);
+      clearTimeout(celebrationTimer);
+    };
   }, [passedThreshold]);
 
   if (showingFailed && failedAnswers.length > 0) {
@@ -172,7 +393,7 @@ export default function ResultScreen({
 
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 20, backgroundColor: colors.background }}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingTop: 20, backgroundColor: passedThreshold ? colors.background : '#FFF1F2' }}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           {showConfetti && (
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none' }}>
@@ -184,6 +405,7 @@ export default function ResultScreen({
               />
             </View>
           )}
+          {showCelebration && <StreakCelebration visible={showCelebration} streakCount={streakCount} />}
           {passedThreshold ? (
             <>
               <View style={{ padding: 32, borderRadius: 999, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6, marginBottom: 20, backgroundColor: colors.warning }}>
@@ -195,9 +417,7 @@ export default function ResultScreen({
             </>
           ) : (
             <>
-              <View style={{ padding: 32, borderRadius: 999, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6, marginBottom: 20, backgroundColor: colors.danger }}>
-                <AlertCircle size={80} color="#EA2B2B" fill="#EA2B2B" />
-              </View>
+              <ShatteredHeartAnim />
               <Text style={{ fontSize: 32, fontWeight: '900', textAlign: 'center', color: colors.danger, marginBottom: 8 }}>
                 Cần cố gắng hơn
               </Text>
@@ -249,7 +469,7 @@ export default function ResultScreen({
               onPress={onContinue}
               disabled={!canContinue}
               style={{
-                backgroundColor: canContinue ? colors.card : colors.surface,
+                backgroundColor: canContinue ? colors.primary : colors.surface,
                 paddingVertical: 18,
                 borderRadius: 20,
                 alignItems: 'center',
@@ -257,8 +477,8 @@ export default function ResultScreen({
                 borderBottomColor: canContinue ? colors.primary : colors.surface,
               }}
             >
-              <Text style={{ fontSize: 18, fontWeight: '900', textTransform: 'uppercase', color: canContinue ? colors.card : colors.textSecondary }}>
-                {isBoss ? 'Quay lại Map' : 'Bài tiếp theo'}
+              <Text style={{ fontSize: 18, fontWeight: '900', textTransform: 'uppercase', color: canContinue ? '#FFFFFF' : colors.textSecondary }}>
+                {isBoss ? 'Quay lại Map' : 'Tiếp tục'}
               </Text>
             </TouchableOpacity>
             {!canContinue && (
@@ -274,6 +494,45 @@ export default function ResultScreen({
 }
 
 const styles = StyleSheet.create({
+  celebrationAbsoluteWrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    alignItems: 'center',
+    justifyContent: 'center',
+    pointerEvents: 'none',
+  },
+  celebrationWidget: {
+    width: 180,
+    height: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'absolute',
+  },
+  verticalTextChain: {
+    position: 'absolute',
+    right: -52,
+    top: -10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verticalText: {
+    color: '#FFD02C',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 1,
+    lineHeight: 22,
+  },
+  flameSubtitle: {
+    marginTop: 18,
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#FFD02C',
+    textAlign: 'center',
+  },
   confettiWrapper: {
     position: 'absolute',
     top: 0,

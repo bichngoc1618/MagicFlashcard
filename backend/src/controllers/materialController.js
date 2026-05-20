@@ -1,6 +1,24 @@
 import db from '../config/db.js';
 import { seedDefaultStudyContent } from '../config/defaultSeed.js';
 
+const CHUNK_SIZE = 10;
+
+const getTotalBatches = (totalCards) => {
+  if (!totalCards || totalCards <= 0) return 0;
+  const numFullChunks = Math.floor(totalCards / CHUNK_SIZE);
+  const remainder = totalCards % CHUNK_SIZE;
+  if (numFullChunks === 0) return 1;
+  return remainder >= 6 ? numFullChunks + 1 : numFullChunks;
+};
+
+const calculateNodeProgress = (totalCards, currentNodeIndex = 0) => {
+  const totalBatches = getTotalBatches(totalCards);
+  const totalNodes = totalBatches > 0 ? totalBatches * 5 + Math.floor((totalBatches - 1) / 2) + 1 : 0;
+  const completedNodes = Math.min(Math.max(Number(currentNodeIndex) || 0, 0), totalNodes);
+  const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
+  return { totalNodes, completedNodes, progressPercentage };
+};
+
 export const getMaterials = async (req, res) => {
   try {
     const userId = Number(req.params.userId);
@@ -24,7 +42,18 @@ export const getMaterials = async (req, res) => {
       [userId, userId, userId]
     );
 
-    return res.json({ materials });
+    const materialsWithProgress = materials.map((item) => {
+      const { totalNodes, completedNodes, progressPercentage } = calculateNodeProgress(item.total_cards, item.current_card_index);
+      return {
+        ...item,
+        total_nodes: totalNodes,
+        completed_nodes: completedNodes,
+        node_progress_percentage: progressPercentage,
+        progress_percentage: progressPercentage,
+      };
+    });
+
+    return res.json({ materials: materialsWithProgress });
   } catch (error) {
     console.error('GET /materials error', error);
     return res.status(500).json({ error: 'Không thể lấy danh sách tài liệu.' });
@@ -181,7 +210,10 @@ export const getStudyJourney = async (req, res) => {
     );
     const stats = statsRows[0] || { total_cards: 0, learned_cards: 0 };
 
-    const progressPercentage = stats.total_cards > 0 ? Math.round((stats.learned_cards / stats.total_cards) * 100) : 0;
+    const totalBatches = getTotalBatches(stats.total_cards);
+    const totalNodes = totalBatches > 0 ? totalBatches * 5 + Math.floor((totalBatches - 1) / 2) + 1 : 0;
+    const completedNodes = Math.min(Math.max(Number(learningPath.current_card_index) || 0, 0), totalNodes);
+    const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
 
     return res.json({
       material: {
@@ -191,6 +223,8 @@ export const getStudyJourney = async (req, res) => {
         user_id: material.user_id,
         total_cards: stats.total_cards,
         learned_cards: stats.learned_cards,
+        total_nodes: totalNodes,
+        completed_nodes: completedNodes,
         progress_percentage: progressPercentage,
         learningPath,
       },
@@ -240,7 +274,7 @@ export const deleteFlashcard = async (req, res) => {
 export const getUserStats = async (req, res) => {
   try {
     const userId = Number(req.params.userId);
-    const [userRows] = await db.query('SELECT streak_count FROM users WHERE id = ?', [userId]);
+    const [userRows] = await db.query('SELECT streak_count, total_xp, last_study_date, global_hearts FROM users WHERE id = ?', [userId]);
     const user = userRows[0];
     if (!user) {
       return res.status(404).json({ error: 'Người dùng không tồn tại.' });
@@ -257,12 +291,19 @@ export const getUserStats = async (req, res) => {
       `SELECT start_time FROM user_study_sessions WHERE user_id = ? AND date = ? AND end_time IS NULL ORDER BY start_time DESC LIMIT 1`,
       [userId, today]
     );
+    let activeMinutes = 0;
     if (activeRows[0]) {
-      const activeMinutes = Math.max(0, Math.round((new Date() - new Date(activeRows[0].start_time)) / 60000));
-      return res.json({ streakCount: user.streak_count, todayMinutes: todayMinutes + activeMinutes });
+      activeMinutes = Math.max(0, Math.round((new Date() - new Date(activeRows[0].start_time)) / 60000));
     }
 
-    return res.json({ streakCount: user.streak_count, todayMinutes });
+    return res.json({ 
+      streakCount: user.streak_count,
+      streak_count: user.streak_count,
+      total_xp: user.total_xp,
+      last_study_date: user.last_study_date,
+      global_hearts: user.global_hearts,
+      todayMinutes: todayMinutes + activeMinutes 
+    });
   } catch (error) {
     console.error('GET /user/stats error', error);
     return res.status(500).json({ error: 'Không thể lấy thống kê người dùng.' });

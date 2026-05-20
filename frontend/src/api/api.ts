@@ -43,9 +43,27 @@ export const getMaterials = async (userId: number) => {
   return request(`/api/materials/${userId}`);
 };
 
+export const createMaterial = async (userId: number, title: string, description?: string) => {
+  return request('/api/materials', {
+    method: 'POST',
+    body: JSON.stringify({ userId, title, description }),
+  });
+};
+
 export const getStudyJourney = async (materialId: number, userId?: number) => {
   const query = userId ? `?userId=${userId}` : '';
   return request(`/api/study/journey/${materialId}${query}`);
+};
+
+export const getHomeWrongWords = async (userId: number) => {
+  return request(`/api/home/${userId}/wrong-words`);
+};
+
+export const updateStudyPathIndex = async (userId: number, materialId: number, nodeIndex: number) => {
+  return request('/api/progress/update-node-index', {
+    method: 'POST',
+    body: JSON.stringify({ userId, materialId, nodeIndex }),
+  });
 };
 
 export const getProfile = async (userId: number) => {
@@ -160,8 +178,11 @@ export const bulkCreateFlashcards = async (materialId: number, cards: any[]) => 
   });
 };
 
-export const startStudy = async (materialId: number) => {
-  return request(`/api/study/start/${materialId}`);
+export const startStudy = async (materialId: number, userId?: number) => {
+  return request(`/api/study/start/${materialId}`, {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
+  });
 };
 
 export const syncStudy = async (payload: any) => {
@@ -248,6 +269,10 @@ export const markCardLearned = async (payload: {
   });
 };
 
+export const getLearnedCards = async (userId: number, materialId: number) => {
+  return request(`/api/progress/learned-cards/${userId}/${materialId}`);
+};
+
 export const updateProgress = async (payload: {
   userId: number;
   materialId: number;
@@ -307,5 +332,32 @@ export const completeQuizNode = async (payload: {
   return request('/api/quiz/complete-node', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+};
+
+export const updateGamificationStats = async (payload: {
+  userId: number;
+  earnedXp: number;
+  newStreakCount: number;
+  newLastStudyDate: string;
+  newHearts?: number;
+}) => {
+  return request('/api/gamification/update', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};
+
+export const refillHearts = async (userId: number, hearts = 5, cost = 200) => {
+  return request('/api/gamification/refill', {
+    method: 'POST',
+    body: JSON.stringify({ userId, hearts, cost }),
+  });
+};
+
+export const deductHearts = async (userId: number, amount = 1, reason = 'quiz_failure') => {
+  return request('/api/gamification/deduct', {
+    method: 'POST',
+    body: JSON.stringify({ userId, amount, reason }),
   });
 };

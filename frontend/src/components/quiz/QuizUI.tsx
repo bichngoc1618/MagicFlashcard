@@ -1,4 +1,4 @@
-﻿import React, { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
   KeyboardAvoidingView,
   LayoutRectangle,
@@ -9,6 +9,8 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
+import { Modal, TouchableOpacity, Dimensions } from 'react-native';
+import { X } from 'lucide-react-native';
 
 import ScreenContainer from '../ScreenContainer';
 import type { QuizType, QuizWord } from './types';
@@ -67,6 +69,7 @@ export interface QuizUIProps {
   onChangeInput: (value: string) => void;
   onSelectOption: (option: string | null) => void;
   onPressTile: (tileId: string) => void;
+  onRemoveTile?: (tileId: string) => void;
   onResetChosenTileIds: () => void;
   onSetSelectedLeftId: (id: string | null) => void;
   onSetSelectedRightId: (id: string | null) => void;
@@ -74,6 +77,8 @@ export interface QuizUIProps {
   onResetMatchState: () => void;
   onSetIsCorrect: (correct: boolean | null) => void;
   onContinue: () => void;
+  showWrongPairsReview: boolean;
+  onProceedAfterReview: () => void;
   leftItemLayouts: React.MutableRefObject<Record<string, LayoutRectangle>>;
   rightItemLayouts: React.MutableRefObject<Record<string, LayoutRectangle>>;
 }
@@ -143,6 +148,7 @@ export default function QuizUI(props: QuizUIProps) {
               onChangeInput={props.onChangeInput}
               onSelectOption={props.onSelectOption}
               onPressTile={props.onPressTile}
+              onRemoveTile={props.onRemoveTile}
               onResetChosenTileIds={props.onResetChosenTileIds}
               onSetSelectedLeftId={props.onSetSelectedLeftId}
               onSetSelectedRightId={props.onSetSelectedRightId}
@@ -181,9 +187,46 @@ export default function QuizUI(props: QuizUIProps) {
               onChangeInput={props.onChangeInput}
               onSelectOption={props.onSelectOption}
               onResetChosenTileIds={props.onResetChosenTileIds}
+              onReviewMistakes={() => props.onContinue()}
             />
           </View>
         </KeyboardAvoidingView>
+
+        <Modal visible={props.showWrongPairsReview} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Xem lại câu sai</Text>
+                <TouchableOpacity onPress={props.onProceedAfterReview}>
+                  <X size={24} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ width: '100%', maxHeight: Dimensions.get('window').height * 0.6 }}>
+                {props.currentMatchWords
+                  .filter(w => Array.from(props.wrongPairs).some(pair => pair.startsWith(w.id + '-')))
+                  .map(word => (
+                    <View key={word.id} style={[styles.miniFlashcard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                      <Text style={[styles.miniKanji, { color: colors.text }]}>{word.kanji}</Text>
+                      <View style={{ flex: 1, marginLeft: 16 }}>
+                        <Text style={[styles.miniHiragana, { color: colors.primary }]}>{word.hiragana}</Text>
+                        <Text style={[styles.miniMeaning, { color: colors.textSecondary }]}>{word.meaning}</Text>
+                      </View>
+                    </View>
+                  ))
+                }
+              </ScrollView>
+
+              <TouchableOpacity 
+                style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+                onPress={props.onProceedAfterReview}
+              >
+                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}>ĐÃ HIỂU</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
       </View>
     </ScreenContainer>
   );
@@ -231,4 +274,59 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     textAlign: 'center',
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    width: '100%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    alignItems: 'center',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  miniFlashcard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  miniKanji: {
+    fontSize: 24,
+    fontWeight: '900',
+    minWidth: 50,
+    textAlign: 'center',
+  },
+  miniHiragana: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  miniMeaning: {
+    fontSize: 14,
+  },
+  modalBtn: {
+    width: '100%',
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+  }
 });

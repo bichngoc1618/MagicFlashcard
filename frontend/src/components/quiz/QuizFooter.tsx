@@ -84,25 +84,49 @@ export default function QuizFooter({
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const intervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Thêm useEffect để tự động chuyển câu sau 3 giây khi đã kiểm tra (không áp dụng cho match mode khi score < 80%)
+  // SỬA LỖI CHÍ MẠNG: Ngăn chặn đếm ngược tự động chuyển trang khi ở câu hỏi cuối cùng
   useEffect(() => {
     console.log('QuizFooter useEffect, isCorrect:', isCorrect, 'isMatchMode:', isMatchMode, 'matchScore:', matchScore);
+    
+    // CRITICAL: Hàm helper để dọn sạch các timer cũ khi sớm trả về
+    const clearExistingTimers = () => {
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+    
     if (isCorrect !== null) {
-      // Nếu là match mode và score < 80%, không tự động continue
+      // Nếu là đợt ghép nối (match mode) và chưa đạt 80%, không tự động tiếp tục
       if (isMatchMode && matchScore < 80) {
+        clearExistingTimers();
+        setCountdown(null);
+        return;
+      }
+
+      // CRITICAL SHIELD: Nếu đây là câu hỏi cuối cùng, chặn đứng hoàn toàn bộ hẹn giờ tự động!
+      // Người dùng phải tự tay bấm nút "Xem kết quả" để tránh văng stack điều hướng.
+      if (questionIndex + 1 >= totalQuestionCount) {
+        console.log('👉 Câu hỏi cuối cùng: Hủy kích hoạt setTimeout chuyển câu tự động.');
+        clearExistingTimers();
+        setCountdown(null);
         return;
       }
 
       setCountdown(3);
       console.log('Setting timeout for onContinue');
       timeoutRef.current = setTimeout(() => {
-        console.log('Calling onContinue');
+        console.log('Calling onContinue safely');
         onSetIsCorrect(null);
         onContinue();
       }, 3000);
+      
       intervalRef.current = setInterval(() => {
         setCountdown((prev) => {
-          console.log('Countdown prev:', prev);
           return prev !== null && prev > 0 ? prev - 1 : null;
         });
       }, 1000);
@@ -121,10 +145,11 @@ export default function QuizFooter({
 
     setCountdown(null);
     return undefined;
-  }, [isCorrect, onContinue, onSetIsCorrect, isMatchMode, matchScore]);
+  }, [isCorrect, onContinue, onSetIsCorrect, isMatchMode, matchScore, questionIndex, totalQuestionCount]);
+
   const isCheckEnabled = useMemo(() => {
     if (isMatchMode) {
-      return isMatchComplete; // Cho match, chỉ enable khi đã ghép đủ
+      return isMatchComplete;
     }
 
     switch (stepMode) {
@@ -248,20 +273,14 @@ export default function QuizFooter({
                   : { color: '#FFFFFF' },
               ]}
             >
-              {isSubmitting
-                ? 'Đang kiểm tra...'
-                : 'Kiểm tra'}
+              {isSubmitting ? 'Đang kiểm tra...' : 'Kiểm tra'}
             </Text>
           </TouchableOpacity>
         ) : null
       ) : isMatchMode && matchScore < 80 ? (
-        // Match mode với score < 80%: hiển thị kết quả và nút "Làm lại"
         <View>
           <View style={styles.resultContainer}>
-            <AlertCircle
-              size={30}
-              color={colors.danger}
-            />
+            <AlertCircle size={30} color={colors.danger} />
             <Text style={[styles.resultText, { color: colors.danger }]}>
               Chưa đạt yêu cầu
             </Text>
@@ -285,9 +304,7 @@ export default function QuizFooter({
               { backgroundColor: colors.primary, borderBottomColor: colors.primary },
             ]}
           >
-            <Text style={styles.continueButtonText}>
-              Làm lại đợt này
-            </Text>
+            <Text style={styles.continueButtonText}>Làm lại đợt này</Text>
           </TouchableOpacity>
 
           {!isFirstMatchRound && (
@@ -304,9 +321,7 @@ export default function QuizFooter({
                 { marginTop: 12 },
               ]}
             >
-              <Text style={styles.continueButtonText}>
-                Xem kết quả
-              </Text>
+              <Text style={styles.continueButtonText}>Xem kết quả</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -314,23 +329,15 @@ export default function QuizFooter({
         <View>
           <View style={styles.resultContainer}>
             {isCorrect ? (
-              <CheckCircle2
-                size={30}
-                color={colors.success}
-              />
+              <CheckCircle2 size={30} color={colors.success} />
             ) : (
-              <AlertCircle
-                size={30}
-                color={colors.danger}
-              />
+              <AlertCircle size={30} color={colors.danger} />
             )}
 
             <Text
               style={[
                 styles.resultText,
-                isCorrect
-                  ? { color: colors.success }
-                  : { color: colors.danger },
+                isCorrect ? { color: colors.success } : { color: colors.danger },
               ]}
             >
               {isMatchMode && isCorrect
@@ -341,13 +348,12 @@ export default function QuizFooter({
             </Text>
           </View>
 
-          {/* Luôn hiển thị đáp án đúng */}
           <View style={styles.answerBox}>
-            <Text style={[styles.answerLabel, { color: colors.textSecondary }]}> 
+            <Text style={[styles.answerLabel, { color: isCorrect ? colors.success : colors.danger }]}> 
               {isMatchMode && isCorrect ? `Điểm: ${matchScore}%` : 'Đáp án đúng:'}
             </Text>
 
-            <Text style={[styles.answerValue, { color: colors.text }]}> 
+            <Text style={[styles.answerValue, { color: isCorrect ? colors.success : colors.danger }]}> 
               {isMatchMode && isCorrect
                 ? `Bạn đã ghép đúng ≥ 80%`
                 : ['WRITE_HIRA', 'SCRAMBLED_HIRA'].includes(stepMode)
@@ -358,7 +364,6 @@ export default function QuizFooter({
             </Text>
           </View>
 
-          {/* Hiển thị nút Tiếp tục để người dùng chủ động chuyển câu tiếp theo */}
           <TouchableOpacity
             activeOpacity={0.85}
             disabled={isSubmitting}
@@ -383,20 +388,21 @@ export default function QuizFooter({
                 : 'Tiếp tục'}
             </Text>
           </TouchableOpacity>
-          {autoNextCountdown > 0 && (
+          
+          {/* Chỉ hiển thị chữ countdown nếu không phải câu hỏi cuối */}
+          {countdown !== null && questionIndex + 1 < totalQuestionCount && (
             <Text style={styles.autoNextText}>
-              {questionIndex + 1 >= totalQuestionCount ? `Kết quả (${autoNextCountdown}s)` : `Câu tiếp theo (${autoNextCountdown}s)`}
+              Câu tiếp theo ({countdown}s)
             </Text>
           )}
         </View>
       )}
 
-      {!!feedbackMessage &&
-        isCorrect === null && (
-          <Text style={styles.feedbackText}>
-            {feedbackMessage}
-          </Text>
-        )}
+      {!!feedbackMessage && isCorrect === null && (
+        <Text style={styles.feedbackText}>
+          {feedbackMessage}
+        </Text>
+      )}
     </View>
   );
 }
@@ -405,25 +411,11 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: 24,
     paddingTop: 20,
-    paddingBottom:
-      Platform.OS === 'ios' ? 40 : 30,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 30,
     borderTopWidth: 2,
     borderTopColor: '#E5E5E5',
     minHeight: 120,
   },
-
-  footerDefault: {
-    backgroundColor: '#FFFFFF',
-  },
-
-  footerCorrect: {
-    backgroundColor: '#D7FFB8',
-  },
-
-  footerWrong: {
-    backgroundColor: '#FFDADC',
-  },
-
   checkButton: {
     borderRadius: 16,
     paddingVertical: 18,
@@ -431,68 +423,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderBottomWidth: 4,
   },
-
-  checkButtonEnabled: {
-    backgroundColor: '#58CC02',
-    borderBottomColor: '#469D02',
-  },
-
-  checkButtonDisabled: {
-    backgroundColor: '#E5E5E5',
-    borderBottomColor: '#AFAFAF',
-  },
-
   checkButtonText: {
     fontSize: 18,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
-
-  checkButtonTextEnabled: {
-    color: '#FFFFFF',
-  },
-
-  checkButtonTextDisabled: {
-    color: '#AFAFAF',
-  },
-
   resultContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     marginBottom: 12,
   },
-
   resultText: {
     fontSize: 20,
     fontWeight: '900',
   },
-
-  resultTextCorrect: {
-    color: '#58CC02',
-  },
-
-  resultTextWrong: {
-    color: '#EA2B2B',
-  },
-
   answerBox: {
     marginBottom: 16,
   },
-
   answerLabel: {
-    color: '#EA2B2B',
     fontSize: 13,
     fontWeight: '600',
     opacity: 0.8,
   },
-
   answerValue: {
-    color: '#EA2B2B',
     fontSize: 18,
     fontWeight: '800',
   },
-
   continueButton: {
     borderRadius: 16,
     paddingVertical: 18,
@@ -500,24 +457,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderBottomWidth: 4,
   },
-
-  continueButtonCorrect: {
-    backgroundColor: '#58CC02',
-    borderBottomColor: '#469D02',
-  },
-
-  continueButtonWrong: {
-    backgroundColor: '#EA2B2B',
-    borderBottomColor: '#B71C1C',
-  },
-
   continueButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
-
   autoNextText: {
     marginTop: 10,
     fontSize: 13,
@@ -525,7 +470,6 @@ const styles = StyleSheet.create({
     color: '#8BA39D',
     fontWeight: '700',
   },
-
   feedbackText: {
     marginTop: 10,
     textAlign: 'center',

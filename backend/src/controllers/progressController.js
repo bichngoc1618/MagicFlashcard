@@ -1,7 +1,7 @@
 import db from '../config/db.js';
 
 const CHUNK_SIZE = 10;
-const QUIZ_STEP_TYPES = ['MATCH_MEANING', 'MATCH_HIRA', 'MULTIPLE_CHOICE', 'SCRAMBLED_HIRA', 'WRITE_HIRA'];
+const QUIZ_STEP_TYPES = ['MATCH_MEANING', 'MATCH_HIRA', 'MULTIPLE_CHOICE', 'SCRAMBLED_HIRA'];
 const QUIZ_STEP_OFFSETS = {
   MATCH_MEANING: 0,
   MATCH_HIRA: 10,
@@ -10,9 +10,25 @@ const QUIZ_STEP_OFFSETS = {
   WRITE_HIRA: 40,
 };
 
+const getTotalBatches = (totalCards) => {
+  if (!totalCards || totalCards <= 0) return 0;
+  const numFullChunks = Math.floor(totalCards / CHUNK_SIZE);
+  const remainder = totalCards % CHUNK_SIZE;
+  if (numFullChunks === 0) return 1;
+  return remainder >= 6 ? numFullChunks + 1 : numFullChunks;
+};
+
 const formatDate = (value) => {
   const date = new Date(value);
   return date.toISOString().slice(0, 10);
+};
+
+const calculateJourneyNodeProgress = (totalCards, currentCardIndex = 0) => {
+  const totalBatches = getTotalBatches(totalCards);
+  const totalNodes = totalBatches > 0 ? totalBatches * 5 + Math.floor((totalBatches - 1) / 2) + 1 : 0;
+  const completedNodes = Math.min(Math.max(Number(currentCardIndex) || 0, 0), totalNodes);
+  const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
+  return { totalBatches, totalNodes, completedNodes, progressPercentage };
 };
 
 const encodeQuestionIndex = (quizStepType, questionIndex) => {
@@ -46,7 +62,7 @@ const generateJourneyNodes = (totalBatches) => {
     });
     topPointer += 120;
 
-    for (let quizStep = 0; quizStep < 5; quizStep++) {
+    for (let quizStep = 0; quizStep < QUIZ_STEP_TYPES.length; quizStep++) {
       nodes.push({
         id: `mini-quiz-${batchIdx}-${quizStep}`,
         nodeType: 'MINI_QUIZ',
@@ -107,7 +123,7 @@ export const getStudyPath = async (req, res) => {
       [materialId]
     );
     const totalCards = cardsRows.length;
-    const totalBatches = Math.ceil(totalCards / CHUNK_SIZE);
+    const totalBatches = getTotalBatches(totalCards);
 
     const [progressRows] = await db.query(
       `SELECT flashcard_id, is_learned FROM user_flashcard_progress
@@ -126,31 +142,21 @@ export const getStudyPath = async (req, res) => {
 
     const currentCardIndex = learningPathRows[0]?.current_card_index ?? 0;
 
-    const learnedCount = learnedCardIds.size;
-    const progressPercentage = totalCards > 0 ? Math.round((learnedCount / totalCards) * 100) : 0;
-
     const journeyNodes = generateJourneyNodes(totalBatches);
-    const batchLearned = new Array(totalBatches).fill(false);
-    for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-      const batchStart = batchIdx * CHUNK_SIZE;
-      const batchEnd = Math.min(batchStart + CHUNK_SIZE, totalCards);
-      let allLearned = true;
-      for (let cardIdx = batchStart; cardIdx < batchEnd; cardIdx++) {
-        if (!learnedCardIds.has(cardsRows[cardIdx].id)) {
-          allLearned = false;
-          break;
-        }
-      }
-      batchLearned[batchIdx] = allLearned;
-    }
+    const totalNodes = journeyNodes.length;
+    const completedNodes = Math.min(Math.max(Number(currentCardIndex) || 0, 0), totalNodes);
+    const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
 
+    const learnedCount = learnedCardIds.size;
     const currentActiveNodeIndex = Math.max(0, Number(currentCardIndex) || 0);
 
     return res.json({
       material,
       totalCards,
       totalBatches,
+      totalNodes,
       learnedCards: learnedCount,
+      completedNodes,
       progressPercentage,
       journeyNodes,
       currentActiveNodeIndex,
@@ -258,12 +264,15 @@ export const getProfileAnalytics = async (req, res) => {
     const learnedVocabularyCount = Number(vocabRows[0]?.learned_vocabulary_count ?? 0);
 
     const [studyRows] = await db.query(
-      `SELECT COALESCE(SUM(duration), 0) AS total_study_duration
+      `SELECT COALESCE(SUM(duration), 0) AS total_study_duration_minutes
        FROM user_study_sessions
        WHERE user_id = ?`,
       [userId]
     );
-    const totalStudyDuration = Number(studyRows[0]?.total_study_duration ?? 0);
+    // Convert minutes to seconds so frontend's formatter can handle it as seconds
+    const totalStudyDurationMinutes = Number(studyRows[0]?.total_study_duration_minutes ?? 0);
+    const totalStudyDuration = totalStudyDurationMinutes * 60;
+    console.log(`📊 Study analytics: userId=${userId}, totalDuration=${totalStudyDurationMinutes} minutes (${totalStudyDuration} seconds)`);
 
     const [accuracyRows] = await db.query(
       `SELECT COALESCE(ROUND(AVG(score), 2), 0) AS average_accuracy
@@ -285,7 +294,8 @@ export const getProfileAnalytics = async (req, res) => {
 
     const quizTrend = (quizRows || [])
       .map((row) => ({
-        date: row.date ? row.date.toString().slice(0, 10) : null,
+        // Ensure date is ISO YYYY-MM-DD so frontend can parse reliably
+        date: row.date ? (new Date(row.date)).toISOString().slice(0, 10) : null,
         score: Number(row.average_score ?? 0),
       }))
       .filter((item) => item.date !== null)
@@ -302,7 +312,7 @@ export const getProfileAnalytics = async (req, res) => {
 
     const heatmap = {};
     (heatmapRows || []).forEach((row) => {
-      const dateString = row.date ? row.date.toString().slice(0, 10) : null;
+      const dateString = row.date ? (new Date(row.date)).toISOString().slice(0, 10) : null;
       if (dateString) {
         heatmap[dateString] = Number(row.count ?? 0);
       }
@@ -369,7 +379,38 @@ export const markCardLearned = async (req, res) => {
     });
   } catch (error) {
     console.error('POST /progress/mark-learned error', error);
-    return res.status(500).json({ error: 'Không thể cập nhật tiến độ.' });
+    return res.status(500).json({ error: 'Không thể xử lý tiến độ.' });
+  }
+};
+
+export const updateNodeIndex = async (req, res) => {
+  try {
+    const { userId, materialId, nodeIndex } = req.body;
+    if (!userId || !materialId || nodeIndex === undefined) {
+      return res.status(400).json({ error: 'Thiếu tham số bắt buộc.' });
+    }
+
+    const [rows] = await db.query(
+      'SELECT id FROM learning_path WHERE user_id = ? AND material_id = ?',
+      [userId, materialId]
+    );
+
+    if (rows.length === 0) {
+      await db.query(
+        'INSERT INTO learning_path (user_id, material_id, current_card_index, status) VALUES (?, ?, ?, "in_progress")',
+        [userId, materialId, nodeIndex]
+      );
+    } else {
+      await db.query(
+        'UPDATE learning_path SET current_card_index = ? WHERE user_id = ? AND material_id = ?',
+        [nodeIndex, userId, materialId]
+      );
+    }
+
+    return res.json({ success: true, nodeIndex });
+  } catch (error) {
+    console.error('POST /progress/update-node-index error', error);
+    return res.status(500).json({ error: 'Không thể cập nhật node index.' });
   }
 };
 
@@ -647,5 +688,27 @@ export const getHomeWrongWords = async (req, res) => {
   } catch (error) {
     console.error('GET /home/wrong-words error', error);
     return res.status(500).json({ error: 'Không thể lấy danh sách từ sai.' });
+  }
+};
+
+export const getLearnedCards = async (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    const materialId = Number(req.params.materialId);
+    
+    if (!userId || !materialId) {
+      return res.status(400).json({ error: 'Thiếu tham số.' });
+    }
+
+    const [rows] = await db.query(
+      'SELECT flashcard_id FROM user_flashcard_progress WHERE user_id = ? AND material_id = ? AND is_learned = 1',
+      [userId, materialId]
+    );
+
+    const learnedCardIds = rows.map(r => r.flashcard_id);
+    return res.json({ learnedCardIds });
+  } catch (error) {
+    console.error('GET /progress/learned-cards error', error);
+    return res.status(500).json({ error: 'Không thể lấy danh sách thẻ đã học.' });
   }
 };

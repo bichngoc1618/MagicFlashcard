@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Image,
   ScrollView,
@@ -11,7 +11,7 @@ import {
   StyleSheet
 } from 'react-native';
 import { ChevronLeft, Search, Volume2 } from 'lucide-react-native';
-import { AuthContext } from '../context/AuthContext';
+import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../components/AppNavigator';
@@ -22,7 +22,7 @@ import { useAudioPlayer } from 'expo-audio';
 type Props = StackScreenProps<RootStackParamList, 'Dictionary'>;
 
 export default function DictionaryScreen({ navigation, route }: Props) {
-  const { user } = useContext(AuthContext);
+  const { user } = useAuthContext();
   const { colors } = useTheme();
 
   const [isReady, setIsReady] = useState(false);

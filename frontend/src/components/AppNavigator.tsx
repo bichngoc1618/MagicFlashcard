@@ -1,6 +1,6 @@
-import React, { useContext } from 'react';
+import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
-import { AuthContext } from '../context/AuthContext';
+import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
 // Import các màn hình
@@ -29,6 +29,7 @@ export type RootStackParamList = {
     materialId: number; 
     flashcardId?: string; // Giữ lại để back-compatibility nếu cần
     completedNodeId?: string;
+    completedNodeIndex?: number;
     sessionId?: number;
   };
 
@@ -65,7 +66,7 @@ export type RootStackParamList = {
 const Stack = createStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => {
-  const { isLoggedIn } = useContext(AuthContext);
+  const { isLoggedIn } = useAuthContext();
   const { colors } = useTheme();
 
   if (!isLoggedIn) {

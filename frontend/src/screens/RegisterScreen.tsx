@@ -1,15 +1,15 @@
-import React, { useContext, useState } from 'react';
+import React, { useState } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, StyleSheet, 
   Alert, Image, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AuthContext } from '../context/AuthContext';
+import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { User, Mail, Lock, UserPlus, ArrowLeft } from 'lucide-react-native';
 
 export default function RegisterScreen({ navigation }: any) {
-  const { register } = useContext(AuthContext);
+  const { register } = useAuthContext();
   const { colors } = useTheme();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
