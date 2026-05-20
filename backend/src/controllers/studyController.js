@@ -1,7 +1,11 @@
 import db from '../config/db.js';
 
 // --- HÀM TRỢ GIÚP (HELPER) ---
-const formatDate = (value) => new Date(value).toISOString().slice(0, 10);
+const formatDate = (value) => {
+  const date = new Date(value);
+  const timezoneOffsetMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - timezoneOffsetMs).toISOString().slice(0, 10);
+};
 
 const calculateMinutes = (startTime, endTime) => {
   const start = new Date(startTime);
@@ -141,7 +145,7 @@ export const syncStudy = async (req, res) => {
 
       // Cập nhật last_study_date của user (giúp thống kê và chuỗi)
       try {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = formatDate(new Date());
         await db.query('UPDATE users SET last_study_date = ? WHERE id = ?', [today, userId]);
       } catch (e) {
         console.warn('Không thể cập nhật last_study_date:', e);

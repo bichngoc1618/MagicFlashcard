@@ -68,6 +68,14 @@ export const AuthProvider = ({ children }: any) => {
     setGlobalHearts(profile.global_hearts ?? 5);
   };
 
+  const parseHeartResponse = (response: any): number | undefined => {
+    let hearts = response?.global_hearts ?? response?.globalHearts;
+    if (response?.data) {
+      hearts = response.data.global_hearts ?? response.data.globalHearts ?? hearts;
+    }
+    return hearts !== undefined && hearts !== null ? Number(hearts) : undefined;
+  };
+
   const login = async (email: string, password: string) => {
     const result = await loginApi(email, password);
     const profile: UserProfile = {
@@ -109,32 +117,31 @@ export const AuthProvider = ({ children }: any) => {
   
 const deductHeartOnFailure = async (): Promise<number> => {
   if (!user) return globalHearts;
-  
+
   console.log('⚡ [AuthContext] Tiến trình trừ tim an toàn lên server cho userId:', user.id);
   try {
-    // 1. Gọi API thực tế gửi lên database của backend
     const res = await deductHearts(user.id, 1, 'quiz_failure');
     console.log('⚡ [AuthContext] Server phản hồi dữ liệu trừ mạng:', res);
-    
-    // bóc tách dữ liệu từ server (snake_case hoặc camelCase)
-    let backendHearts = res?.global_hearts !== undefined ? res.global_hearts : res?.globalHearts;
-    if (res?.data && res.data.global_hearts !== undefined) backendHearts = res.data.global_hearts;
-    if (res?.data && res.data.globalHearts !== undefined) backendHearts = res.data.globalHearts;
 
-    if (backendHearts !== undefined && backendHearts !== null) {
-       const newHearts = Number(backendHearts);
-       // 🛡️ BÍ QUYẾT: KHÔNG dùng setGlobalHearts(newHearts) ở đây để chặn đứng lệnh back app!
-       return newHearts; 
-    } else {
-       return Math.max(globalHearts - 1, 0);
+    const backendHearts = parseHeartResponse(res);
+    if (backendHearts !== undefined) {
+      setGlobalHeartsPublic(backendHearts);
+      return backendHearts;
     }
+
+    const fallbackHearts = Math.max(globalHearts - 1, 0);
+    setGlobalHeartsPublic(fallbackHearts);
+    return fallbackHearts;
   } catch (e) {
     if (e instanceof Error && e.message.includes('No hearts remaining')) {
       console.warn('⚡ [AuthContext] Không thể trừ tim vì đã hết tim. Trả về 0 tim.');
+      setGlobalHeartsPublic(0);
       return 0;
     }
     console.error('⚡ [AuthContext] Lỗi trừ mạng không phải do hết tim, dùng fallback cục bộ:', e);
-    return Math.max(globalHearts - 1, 0);
+    const fallbackHearts = Math.max(globalHearts - 1, 0);
+    setGlobalHeartsPublic(fallbackHearts);
+    return fallbackHearts;
   }
 };
 
