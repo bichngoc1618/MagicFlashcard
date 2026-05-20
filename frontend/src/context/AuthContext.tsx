@@ -29,7 +29,8 @@ type AuthContextValue = {
   globalHearts: number;
   setGlobalHearts?: (val: number) => void;
   updateXpAndStreakInDB: (earnedXp: number) => Promise<void>;
-  refillHeartsWithXp: (hearts?: number, cost?: number) => Promise<void>;
+  refillHeartsWithXp: (hearts?: number, cost?: number) => Promise<number | undefined>;
+  refreshUserStats: () => Promise<void>;
   handleHeartLoss: () => void;
   deductHeartOnFailure: () => Promise<number>;
   checkAndTriggerDailyStreak: (userId: number) => Promise<StreakTriggerResult>;
@@ -195,6 +196,17 @@ const deductHeartOnFailure = async (): Promise<number> => {
     }
   };
 
+  const refreshUserStats = async () => {
+    if (!user) return;
+    try {
+      const stats = await getUserStats(user.id);
+      console.log('📊 Refreshed user stats:', stats);
+      setGamificationState(stats);
+    } catch (e) {
+      console.warn('Failed to refresh user stats:', e);
+    }
+  };
+
   // 🛡️ LÁ CHẮN 2: CHỈ CHẠY loadUserData KHI USER ID THAY ĐỔI THỰC TẾ (Đăng nhập/Đăng xuất), 
   // Loại bỏ hoàn toàn streakCount khỏi mảng dependency để triệt tiêu vòng lặp re-render vô tận.
   useEffect(() => {
@@ -300,19 +312,20 @@ const deductHeartOnFailure = async (): Promise<number> => {
     return { isFirstTimeToday, currentStreak };
   };
 
-  const refillHeartsWithXp = async (hearts = 1, cost = 200) => {
-    if (!user || totalXp < cost) return;
+  const refillHeartsWithXp = async (hearts = 1, cost = 200): Promise<number | undefined> => {
+    if (!user || totalXp < cost) return undefined;
 
     try {
       console.log('⚡ [AuthContext] Refilling hearts. UserId:', user.id, 'Hearts:', hearts, 'Cost:', cost);
       const res = await refillHearts(user.id, hearts, cost);
-      
-      const newHearts = res?.globalHearts ?? Math.min((globalHearts || 0) + hearts, 5);
-      
+
+      const newHearts = parseHeartResponse(res) ?? Math.min((globalHearts || 0) + hearts, 5);
       setTotalXp((prev) => prev - cost);
       setGlobalHearts(newHearts);
+      return newHearts;
     } catch (e) {
       console.error('Failed to refill hearts in DB:', e);
+      return undefined;
     }
   };
 
@@ -331,6 +344,7 @@ const deductHeartOnFailure = async (): Promise<number> => {
         setGlobalHearts: setGlobalHeartsPublic,
         updateXpAndStreakInDB,
         refillHeartsWithXp,
+        refreshUserStats,
         purchaseHeartWithXP,
         topUpCount,
         topUpDate,

@@ -24,6 +24,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     globalHearts, 
     deductHeartOnFailure, 
     refillHeartsWithXp, 
+    refreshUserStats,
     checkAndTriggerDailyStreak 
   } = authContext;
   
@@ -189,6 +190,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         try {
           if (sessionId) {
             await syncStudy({ userId: Number(user.id), sessionId });
+            await refreshUserStats();
           }
           await completeQuizSession({
             userId: Number(user.id),
@@ -203,7 +205,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         }
       })();
     }
-  }, [localShowResult, canContinue, sessionLogged, user?.id, materialId, nodeType, nodeId, batchIndex, resultTotalCount, resultCorrectCount]);
+  }, [localShowResult, canContinue, sessionLogged, user?.id, materialId, nodeType, nodeId, batchIndex, resultTotalCount, resultCorrectCount, refreshUserStats]);
 
   // Cập nhật tính toán và kích hoạt Chuỗi Lửa Streak hàng ngày
   React.useEffect(() => {
@@ -270,14 +272,14 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   // Hàm điều hướng thoát chủ động khi người dùng nhấn nút
   const executeExitWrapper = () => {
     setNavigationBlocked(true);
-    
-  // ✨ ĐỒNG BỘ NGƯỢC: Lực ép nạp giá trị tim cục bộ về lại Context để các màn hình Router cha cập nhật theo
-  const updateGlobalHearts = (authContext as any).setGlobalHearts;
-  if (updateGlobalHearts) {
-    updateGlobalHearts(localHearts);
-  }
-  
-  navigation.navigate('StudyJourney', { materialId });
+    if (authContext.setGlobalHearts) {
+      authContext.setGlobalHearts(localHearts);
+    }
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('StudyJourney', { materialId });
+    }
   };
 
   // CRITICAL SHIELD: Wrapper an toàn để chặn auto-continue khi quiz đã hoàn thành
@@ -316,8 +318,10 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
           totalXp={authContext?.totalXp ?? 0}
           topUpCount={(authContext as any)?.topUpCount ?? 0}
           onRefill={async () => {
-            await refillHeartsWithXp(1, 200);
-            setLocalHearts(5); // Reset tim cục bộ về 5 khi nạp năng lượng thành công
+            const newHearts = await refillHeartsWithXp(1, 200);
+            if (typeof newHearts === 'number') {
+              setLocalHearts(newHearts);
+            }
             setIsOutOfHearts(false);
           }}
           onReturnToRoadmap={executeExitWrapper}
