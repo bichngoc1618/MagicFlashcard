@@ -190,22 +190,22 @@ export const getProfileOverview = async (req, res) => {
       return res.status(404).json({ error: 'Người dùng không tồn tại.' });
     }
 
-    const [progressRows] = await db.query(
-      `SELECT
-         sm.id,
-         sm.title,
-         COUNT(ufp.id) AS learned,
-         (SELECT COUNT(*) FROM flashcards WHERE material_id = sm.id) AS total
-       FROM study_materials sm
-       LEFT JOIN user_flashcard_progress ufp
-         ON sm.id = ufp.material_id
-         AND ufp.user_id = ?
-         AND ufp.is_learned = 1
-       WHERE sm.user_id = ?
-       GROUP BY sm.id
-       ORDER BY sm.title ASC`,
-      [userId, userId]
-    );
+   const [progressRows] = await db.query(
+  `SELECT
+     sm.id,
+     sm.title,
+     COUNT(ufp.id) AS learned,
+     (SELECT COUNT(*) FROM flashcards WHERE material_id = sm.id) AS total
+   FROM study_materials sm
+   LEFT JOIN user_flashcard_progress ufp
+     ON sm.id = ufp.material_id
+     AND ufp.user_id = ?
+     AND ufp.is_learned = 1
+   WHERE sm.user_id = ?
+   GROUP BY sm.id, sm.title
+   ORDER BY sm.title ASC`,
+  [userId, userId]
+);
 
     const [recentQuizzes] = await db.query(
       `SELECT
