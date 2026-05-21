@@ -67,7 +67,7 @@ const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
     try {
-        await initDb();
+        // await initDb();
         app.listen(PORT, () => {
             console.log("==========================================");
             console.log(`🦈 SERVER: Same-kun đã tỉnh giấc tại cổng ${PORT}`);
