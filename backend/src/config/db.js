@@ -17,6 +17,17 @@ const db = mysql.createPool({
     ssl: useSSL ? { minVersion: 'TLSv1.2', rejectUnauthorized: false } : null
 });
 
+// Short-term workaround: remove ONLY_FULL_GROUP_BY from session sql_mode so
+// legacy GROUP BY queries continue to work on hosts that enforce it.
+(async () => {
+    try {
+        await db.query("SET SESSION sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''))");
+        console.log('⚙️ Adjusted DB session sql_mode to remove ONLY_FULL_GROUP_BY');
+    } catch (err) {
+        console.warn('⚠️ Could not adjust sql_mode:', err.message);
+    }
+})();
+
 // Kiểm tra kết nối
 db.getConnection()
     .then((connection) => {

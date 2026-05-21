@@ -30,8 +30,8 @@ export const getMaterials = async (req, res) => {
          m.created_at,
          COALESCE(COUNT(f.id), 0) AS total_cards,
          COALESCE(SUM(COALESCE(ufp.is_learned, 0)), 0) AS learned_cards,
-         COALESCE(lp.current_card_index, 0) AS current_card_index,
-         COALESCE(lp.status, 'in_progress') AS status
+         COALESCE(MAX(lp.current_card_index), 0) AS current_card_index,
+         COALESCE(MAX(lp.status), 'in_progress') AS status
        FROM study_materials m
        LEFT JOIN flashcards f ON f.material_id = m.id
        LEFT JOIN user_flashcard_progress ufp ON ufp.flashcard_id = f.id AND ufp.user_id = ?
