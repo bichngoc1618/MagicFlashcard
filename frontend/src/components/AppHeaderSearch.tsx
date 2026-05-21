@@ -26,7 +26,7 @@ export default function AppHeaderSearch({
 
   const dynamicStyles = {
     container: {
-      marginTop: 32,
+      marginTop: 15,
     },
     topRow: {
       flexDirection: 'row' as const,
@@ -102,7 +102,7 @@ export default function AppHeaderSearch({
       backgroundColor: colors.card,
       borderRadius: 24,
       paddingHorizontal: 18,
-      paddingVertical: 14,
+      paddingVertical: 10,
       borderWidth: 1,
       borderColor: colors.border,
       shadowColor: '#000',

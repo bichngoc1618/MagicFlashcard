@@ -189,7 +189,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
       (async () => {
         try {
           if (sessionId) {
-            await syncStudy({ userId: Number(user.id), sessionId });
+            await syncStudy({ userId: Number(user.id), materialId, sessionId, currentNodeIndex, nodeCompleted: true });
             await refreshUserStats();
           }
           await completeQuizSession({
@@ -232,6 +232,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
           
           // API ở server vẫn trừ mạng và lưu sâu vào database thực tế
           const updatedHearts = await deductHeartOnFailure();
+          
           console.log('⚡ [QuizScreen] Gọi xong deductHeartOnFailure(). Số tim mới nhận được:', updatedHearts);
           
           // Bước 2: Cập nhật biến tim mới vào local State (Không thay đổi globalHearts toàn cục)
@@ -271,16 +272,18 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
 
   // Hàm điều hướng thoát chủ động khi người dùng nhấn nút
   const executeExitWrapper = () => {
-    setNavigationBlocked(true);
-    if (authContext.setGlobalHearts) {
-      authContext.setGlobalHearts(localHearts);
-    }
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.navigate('StudyJourney', { materialId });
-    }
-  };
+  setNavigationBlocked(true);
+  // Navigate back to StudyJourney (map) with completed node info
+  console.log('EXIT WRAPPER RUNNING');
+  try {
+    const params: any = { materialId };
+    if (typeof currentNodeIndex !== 'undefined') params.completedNodeIndex = currentNodeIndex;
+    if (sessionId) params.sessionId = Number(sessionId);
+    navigation.navigate('StudyJourney' as any, params);
+  } catch (err) {
+    console.warn('Navigation error in executeExitWrapper:', err);
+  }
+};
 
   // CRITICAL SHIELD: Wrapper an toàn để chặn auto-continue khi quiz đã hoàn thành
   const safeHandleContinueQuestion = React.useCallback(() => {
@@ -309,12 +312,12 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
           onRetry={executeRetryWrapper} // Ép làm sạch bộ đếm cũ qua hàm Wrapper
           onContinue={executeExitWrapper} // Thoát chủ động qua nút bấm vật lý
           canContinue={canContinue}
+          showStreakCelebration={currentNodeIndex === 0}
         />
 
-        {/* Cửa sổ chặn đứng khi người dùng kiệt sức hoàn toàn (Mất 5 tim) */}
         <OutOfHeartsInterceptor
           isVisible={isOutOfHearts}
-          globalHearts={localHearts} // ✨ Đã cập nhật thành localHearts để hiển thị chuẩn xác
+          globalHearts={localHearts}
           totalXp={authContext?.totalXp ?? 0}
           topUpCount={(authContext as any)?.topUpCount ?? 0}
           onRefill={async () => {
@@ -564,5 +567,5 @@ const modalStyles = StyleSheet.create({
     marginTop: 12,
   },
   btnText: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 0.8 },
-  heartOverlay: { position: 'absolute', right: 16, top: 12, zIndex: 99 },
+  heartOverlay: { position: 'absolute', right: 16, top: 120, zIndex: 99 },
 });

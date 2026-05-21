@@ -37,7 +37,7 @@ export const login = async (req, res) => {
     }
 
     const [rows] = await db.query(
-      `SELECT id, username, password_hash, total_xp, streak_count, last_study_date, global_hearts,
+      `SELECT id, username, password_hash, total_xp, streak_count, last_study_date, last_node_completed_date, global_hearts,
               CASE WHEN last_study_date IS NOT NULL AND last_study_date < CURRENT_DATE() THEN 1 ELSE 0 END AS should_reset_hearts
        FROM users WHERE email = ?`,
       [email]
@@ -69,6 +69,31 @@ export const login = async (req, res) => {
 
     if (needsUpdate) {
       await db.query('UPDATE users SET global_hearts = ? WHERE id = ?', [finalHearts, user.id]);
+    }
+
+    // Check last node completion date on login and decrement streak if days have passed
+    try {
+      const lastNodeDateRaw = user.last_node_completed_date;
+      if (lastNodeDateRaw) {
+        const today = new Date();
+        const todayStr = new Date(today.getTime() - (today.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+
+        const lastNodeDate = new Date(lastNodeDateRaw);
+        const lastNodeStr = new Date(lastNodeDate.getTime() - (lastNodeDate.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+
+        const diffMs = new Date(todayStr).getTime() - new Date(lastNodeStr).getTime();
+        const daysPassed = Math.floor(diffMs / 86400000);
+
+        if (daysPassed > 0) {
+          const decreasedStreak = Math.max(0, Number(user.streak_count || 0) - daysPassed);
+          if (decreasedStreak !== Number(user.streak_count || 0)) {
+            await db.query('UPDATE users SET streak_count = ? WHERE id = ?', [decreasedStreak, user.id]);
+            user.streak_count = decreasedStreak;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Không thể điều chỉnh streak khi login:', err && err.message ? err.message : err);
     }
 
     return res.json({ 

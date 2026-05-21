@@ -87,7 +87,13 @@ export const syncStudy = async (req, res) => {
   try {
     const { userId, materialId, cardId, isLearned, currentNodeIndex, sessionId } = req.body;
 
+    if (typeof userId === 'undefined' || typeof materialId === 'undefined' || materialId === null) {
+      return res.status(400).json({ error: 'Missing required fields: userId and materialId are required.' });
+    }
+
     const updates = [];
+    let shouldUpdateStreak = false;
+    let advancedToNodeIndex = null;
     if (cardId && isLearned) {
       updates.push(db.query(
         `INSERT INTO user_flashcard_progress
@@ -115,12 +121,17 @@ export const syncStudy = async (req, res) => {
             'UPDATE learning_path SET current_card_index = ? WHERE material_id = ? AND user_id = ?',
             [currentNodeIndex, materialId, userId]
           ));
+          // Mark that we advanced to a new node so we can update streak/last_node_completed_date
+          shouldUpdateStreak = true;
+          advancedToNodeIndex = currentNodeIndex;
         }
       } else {
         updates.push(db.query(
           'INSERT INTO learning_path (user_id, material_id, current_card_index, status) VALUES (?, ?, ?, "in_progress")',
           [userId, materialId, currentNodeIndex]
         ));
+        shouldUpdateStreak = true;
+        advancedToNodeIndex = currentNodeIndex;
       }
     }
 
@@ -150,6 +161,35 @@ export const syncStudy = async (req, res) => {
       } catch (e) {
         console.warn('Không thể cập nhật last_study_date:', e);
       }
+    }
+
+    // Nếu người dùng vừa hoàn thành/tiến tới node mới, cập nhật streak dựa trên last_node_completed_date
+    try {
+      // Two cases: either we advanced index (shouldUpdateStreak) OR frontend explicitly flagged nodeCompleted
+      const nodeCompletedFlag = req.body?.nodeCompleted;
+      if ((shouldUpdateStreak && advancedToNodeIndex !== null) || nodeCompletedFlag) {
+        const [userRows] = await db.query('SELECT streak_count, last_node_completed_date FROM users WHERE id = ?', [userId]);
+        const user = userRows[0] || { streak_count: 0, last_node_completed_date: null };
+        const todayStr = formatDate(new Date());
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = formatDate(yesterday);
+
+        let newStreak = Number(user.streak_count) || 0;
+        const lastNodeDate = user.last_node_completed_date ? formatDate(user.last_node_completed_date) : null;
+
+        if (lastNodeDate === todayStr) {
+          // already counted today, do nothing
+        } else if (lastNodeDate === yesterdayStr) {
+          newStreak = newStreak + 1;
+        } else {
+          newStreak = 1;
+        }
+
+        await db.query('UPDATE users SET streak_count = ?, last_node_completed_date = ? WHERE id = ?', [newStreak, todayStr, userId]);
+      }
+    } catch (err) {
+      console.warn('Không thể cập nhật last_node_completed_date / streak:', err.message || err);
     }
 
     res.json({ success: true });

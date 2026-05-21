@@ -819,6 +819,7 @@ export default function useQuizScreen({
             sessionId,
             quizStepType: PRACTICE_STEPS[currentStep],
             stepScore: stepScore,
+            nodeCompleted: true,
           });
         } catch (error) {
           console.warn('Lỗi lưu tiến độ step:', error);

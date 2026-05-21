@@ -1,5 +1,7 @@
-import React, { createContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
+
+
 import { login as loginApi, register as registerApi, updateGamificationStats, refillHearts, getUserStats, deductHearts } from '../api/api';
 
 export type UserProfile = {
@@ -116,35 +118,35 @@ export const AuthProvider = ({ children }: any) => {
     setGlobalHearts(prev => Math.max(prev - 1, 0));
   };
   
-const deductHeartOnFailure = async (): Promise<number> => {
-  if (!user) return globalHearts;
-
-  console.log('⚡ [AuthContext] Tiến trình trừ tim an toàn lên server cho userId:', user.id);
+const deductHeartOnFailure = useCallback(async (): Promise<number> => {
   try {
+    if (!user?.id) {
+      return globalHearts;
+    }
+
     const res = await deductHearts(user.id, 1, 'quiz_failure');
-    console.log('⚡ [AuthContext] Server phản hồi dữ liệu trừ mạng:', res);
+
+    console.log('API RESPONSE:', res);
+
+    if (!res) {
+      return Math.max(globalHearts - 1, 0);
+    }
 
     const backendHearts = parseHeartResponse(res);
-    if (backendHearts !== undefined) {
-      setGlobalHeartsPublic(backendHearts);
-      return backendHearts;
+
+    if (typeof backendHearts !== 'number') {
+      return Math.max(globalHearts - 1, 0);
     }
 
-    const fallbackHearts = Math.max(globalHearts - 1, 0);
-    setGlobalHeartsPublic(fallbackHearts);
-    return fallbackHearts;
-  } catch (e) {
-    if (e instanceof Error && e.message.includes('No hearts remaining')) {
-      console.warn('⚡ [AuthContext] Không thể trừ tim vì đã hết tim. Trả về 0 tim.');
-      setGlobalHeartsPublic(0);
-      return 0;
-    }
-    console.error('⚡ [AuthContext] Lỗi trừ mạng không phải do hết tim, dùng fallback cục bộ:', e);
-    const fallbackHearts = Math.max(globalHearts - 1, 0);
-    setGlobalHeartsPublic(fallbackHearts);
-    return fallbackHearts;
+    setGlobalHeartsPublic(backendHearts);
+
+    return backendHearts;
+  } catch (err) {
+    console.error('DEDUCT ERROR:', err);
+
+    return Math.max(globalHearts - 1, 0);
   }
-};
+},  [user, globalHearts]);
 
   const purchaseHeartWithXP = async () => {
     if (!user || totalXp < 200) {
