@@ -1,2 +1,2 @@
-
-export const BACKEND_URL = 'http://192.168.5.46:3000';
+// Bỏ dấu gạch chéo ở cuối đi để lúc nối chuỗi bằng dấu `.../${BACKEND_URL}/api/...` không bị lỗi
+export const BACKEND_URL = 'https://magicflashcard.onrender.com';
