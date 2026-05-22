@@ -10,6 +10,9 @@ import {
   seedDefaultMaterials,
   getFlashcards,
   getUserStats,
+  shareMaterial,
+  getNotifications,
+  markNotificationsRead,
 } from '../controllers/materialController.js';
 import { startStudy, syncStudy } from '../controllers/studyController.js';
 import {
@@ -46,6 +49,9 @@ router.post('/study/sync', syncStudy);
 router.get('/user/stats/:userId', getUserStats);
 router.post('/auth/register', register);
 router.post('/auth/login', login);
+router.post('/materials/share', shareMaterial);
+router.get('/notifications/:userId', getNotifications);
+router.post('/notifications/mark-read', markNotificationsRead);
 
 // New progress tracking endpoints
 router.get('/progress/study-path/:userId/:materialId', getStudyPath);

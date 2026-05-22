@@ -13,6 +13,72 @@ const calculateMinutes = (startTime, endTime) => {
   return Math.max(0, Math.round((end - start) / 60000));
 };
 
+const ensureStudySessionForToday = async (userId, sessionId = null) => {
+  const today = formatDate(new Date());
+
+  if (sessionId) {
+    const [rows] = await db.query('SELECT id, start_time FROM user_study_sessions WHERE id = ?', [sessionId]);
+    if (rows.length > 0) {
+      const startTime = rows[0].start_time;
+      const endTime = new Date();
+      const duration = calculateMinutes(startTime, endTime);
+      await db.query('UPDATE user_study_sessions SET end_time = ?, duration = ? WHERE id = ?', [endTime, duration, sessionId]);
+      return sessionId;
+    }
+  }
+
+  const [existingRows] = await db.query(
+    'SELECT id, start_time FROM user_study_sessions WHERE user_id = ? AND date = ? ORDER BY id DESC LIMIT 1',
+    [userId, today]
+  );
+
+  if (existingRows.length > 0) {
+    const startTime = existingRows[0].start_time;
+    const endTime = new Date();
+    const duration = calculateMinutes(startTime, endTime);
+    await db.query('UPDATE user_study_sessions SET end_time = ?, duration = ? WHERE id = ?', [endTime, duration, existingRows[0].id]);
+    return existingRows[0].id;
+  }
+
+  const [result] = await db.query(
+    'INSERT INTO user_study_sessions (user_id, start_time, end_time, duration, date) VALUES (?, NOW(), NOW(), 0, CURDATE())',
+    [userId]
+  );
+  return result.insertId;
+};
+
+const recalculateStreakFromActivity = async (userId) => {
+  const today = new Date();
+  const todayStr = formatDate(today);
+  const [rows] = await db.query(
+    `SELECT DISTINCT DATE(activity_date) AS activity_date
+     FROM (
+       SELECT date AS activity_date FROM user_study_sessions WHERE user_id = ?
+       UNION
+       SELECT DATE(completed_at) AS activity_date FROM quiz_sessions WHERE user_id = ?
+     ) AS all_activity
+     WHERE activity_date IS NOT NULL
+     ORDER BY activity_date DESC`,
+    [userId, userId]
+  );
+
+  const activityDates = (rows || []).map((row) => formatDate(row.activity_date));
+  let streak = 0;
+  let expectedDate = todayStr;
+
+  for (const date of activityDates) {
+    if (date !== expectedDate) break;
+    streak += 1;
+    const nextDate = new Date(expectedDate);
+    nextDate.setDate(nextDate.getDate() - 1);
+    expectedDate = formatDate(nextDate);
+  }
+
+  const latestDate = activityDates[0] || todayStr;
+  await db.query('UPDATE users SET streak_count = ?, last_node_completed_date = ?, last_study_date = ? WHERE id = ?', [streak, latestDate, latestDate, userId]);
+  return streak;
+};
+
 // --- CÁC HÀM EXPORT CHÍNH ---
 
 // 1. Lấy lộ trình zigzag (Hàm này chúng ta vừa viết)
@@ -66,8 +132,8 @@ export const startStudy = async (req, res) => {
     }
 
     const [sessionResult] = await db.query(
-      'INSERT INTO user_study_sessions (user_id, start_time, date) VALUES (?, NOW(), ?)',
-      [userId, formatDate(new Date())]
+      'INSERT INTO user_study_sessions (user_id, start_time, date) VALUES (?, NOW(), CURDATE())',
+      [userId]
     );
 
     console.log(`✅ Session created: sessionId=${sessionResult.insertId}`);
@@ -137,59 +203,23 @@ export const syncStudy = async (req, res) => {
 
     await Promise.all(updates);
 
-    // Cập nhật session nếu có sessionId: set end_time và tính duration
     if (sessionId) {
-      const now = new Date();
-
-      // Lấy start_time của session
-      const [rows] = await db.query('SELECT start_time FROM user_study_sessions WHERE id = ?', [sessionId]);
-      const startTime = rows[0]?.start_time;
-
-      let durationMinutes = 0;
-      if (startTime) {
-        durationMinutes = calculateMinutes(startTime, now);
-      }
-
-      console.log(`⏱️ Updating session ${sessionId}: duration=${durationMinutes} minutes`);
-
-      await db.query('UPDATE user_study_sessions SET end_time = ?, duration = ? WHERE id = ?', [now, durationMinutes, sessionId]);
-
-      // Cập nhật last_study_date của user (giúp thống kê và chuỗi)
-      try {
-        const today = formatDate(new Date());
-        await db.query('UPDATE users SET last_study_date = ? WHERE id = ?', [today, userId]);
-      } catch (e) {
-        console.warn('Không thể cập nhật last_study_date:', e);
+      await ensureStudySessionForToday(userId, sessionId);
+    } else {
+      const nodeCompletedFlag = req.body?.nodeCompleted;
+      if ((shouldUpdateStreak && advancedToNodeIndex !== null) || nodeCompletedFlag) {
+        await ensureStudySessionForToday(userId);
       }
     }
 
-    // Nếu người dùng vừa hoàn thành/tiến tới node mới, cập nhật streak dựa trên last_node_completed_date
+    // Nếu người dùng vừa hoàn thành/tiến tới node mới, cập nhật streak dựa trên nhật ký hoạt động
     try {
-      // Two cases: either we advanced index (shouldUpdateStreak) OR frontend explicitly flagged nodeCompleted
       const nodeCompletedFlag = req.body?.nodeCompleted;
       if ((shouldUpdateStreak && advancedToNodeIndex !== null) || nodeCompletedFlag) {
-        const [userRows] = await db.query('SELECT streak_count, last_node_completed_date FROM users WHERE id = ?', [userId]);
-        const user = userRows[0] || { streak_count: 0, last_node_completed_date: null };
-        const todayStr = formatDate(new Date());
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = formatDate(yesterday);
-
-        let newStreak = Number(user.streak_count) || 0;
-        const lastNodeDate = user.last_node_completed_date ? formatDate(user.last_node_completed_date) : null;
-
-        if (lastNodeDate === todayStr) {
-          // already counted today, do nothing
-        } else if (lastNodeDate === yesterdayStr) {
-          newStreak = newStreak + 1;
-        } else {
-          newStreak = 1;
-        }
-
-        await db.query('UPDATE users SET streak_count = ?, last_node_completed_date = ? WHERE id = ?', [newStreak, todayStr, userId]);
+        await recalculateStreakFromActivity(userId);
       }
     } catch (err) {
-      console.warn('Không thể cập nhật last_node_completed_date / streak:', err.message || err);
+      console.warn('Không thể cập nhật streak từ nhật ký hoạt động:', err.message || err);
     }
 
     res.json({ success: true });

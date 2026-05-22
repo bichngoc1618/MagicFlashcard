@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react';
-import { Alert, LayoutAnimation, Modal, View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { Alert, LayoutAnimation, Modal, View, Text, TouchableOpacity, Image, StyleSheet, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../components/AppNavigator';
@@ -10,10 +10,10 @@ import QuizUI from '../components/quiz/QuizUI';
 import ResultScreen from '../components/quiz/ResultScreen';
 import type { QuizType } from '../components/quiz/types';
 import { useAuthContext } from '../context/AuthContext';
-import useQuizScreen from './useQuizScreen';
-
+import { useTheme } from '../context/ThemeContext';
 import { completeQuizSession, syncStudy } from '../api/api';
 import DuoHearts from '../components/quiz/DuoHearts';
+import useQuizScreen from './useQuizScreen';
 
 type QuizScreenProps = StackScreenProps<RootStackParamList, 'Quiz'>;
 
@@ -28,6 +28,9 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     checkAndTriggerDailyStreak 
   } = authContext;
   
+  const { colors, theme } = useTheme();
+  const isDark = theme === 'dark';
+
   // 🛡️ STATE TIM CỤC BỘ: Cách ly hoàn toàn khỏi AuthContext để chặn đứng lỗi tự động back app
   const [localHearts, setLocalHearts] = React.useState<number>(globalHearts);
 
@@ -45,8 +48,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   const [isOutOfHearts, setIsOutOfHearts] = React.useState(false);
   const [navigationBlocked, setNavigationBlocked] = React.useState(false);
 
-  // CRITICAL SHIELD STATE: Ép màn hình hiển thị Kết quả ở tầng giao diện cao nhất,
-  // cắt đứt hoàn toàn luồng unmount tự hủy của QuizUI hay QuizFooter ở câu cuối cùng.
+  // CRITICAL SHIELD STATE: Ép màn hình hiển thị Kết quả ở tầng giao diện cao nhất
   const [localShowResult, setLocalShowResult] = React.useState(false);
 
   const materialId = route.params?.materialId ?? 1;
@@ -63,7 +65,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     questions,
     answers,
     isCorrect,
-    showResult, // Trạng thái gốc từ custom hook ngầm
+    showResult, 
     selectedLeftId,
     selectedRightId,
     matchedIds,
@@ -125,6 +127,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     isSubmitting,
     canContinue, 
     autoNextCountdown,
+    // ✅ ĐÃ SỬA: Thay đổi dấu "=" lỗi chính tả thành dấu phẩy phân tách thuộc tính destructuring
     showWrongPairsReview,
     proceedAfterReview,
   } = useQuizScreen({
@@ -136,7 +139,6 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     currentNodeIndex,
     sessionId,
     user: user ?? undefined,
-    // CRITICAL SHIELD PROXY: Khóa chặt 100% chân rết điều hướng tự động của tầng Core Logic.
     navigation: {
       ...navigation,
       goBack: () => console.warn('🛑 [Core Logic] Chặn đứng hành vi tự động goBack ngầm từ useQuizScreen.'),
@@ -145,18 +147,16 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     } as any,
   });
 
-  // ĐỒNG BỘ TRẠNG THÁI: Khi câu hỏi cuối cùng chạy xong và hook chuyển showResult sang true,
-  // lập tức kích hoạt Tấm Khiên Cục Bộ để khóa chặt màn hình Result.
+  // ĐỒNG BỘ TRẠNG THÁI: Khi câu hỏi cuối cùng chạy xong kích hoạt tấm khiên cục bộ hiển thị Kết quả
   useEffect(() => {
     if (showResult === true) {
       setLocalShowResult(true);
     }
   }, [showResult]);
 
-  // Bộ lắng nghe chặn thao tác vuốt cạnh/bấm nút Back vật lý của điện thoại khi đang làm bài
+  // Bộ lắng nghe chặn thao tác vuốt cạnh/bấm nút Back vật lý khi đang làm bài
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      // Nếu bài test đã xong và đang hiện bảng kết quả, mở khóa để người dùng tương tác tự do qua các nút bấm xịn
       if (localShowResult) {
         return;
       }
@@ -182,15 +182,16 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     return unsubscribe;
   }, [navigation, localShowResult, navigationBlocked]);
 
-  // Ghi nhận dữ liệu Session kết quả lên SQLite/Server
+  // Ghi nhận dữ liệu Session kết quả lên Server
   React.useEffect(() => {
     if (localShowResult && canContinue && !sessionLogged && user?.id) {
       setSessionLogged(true);
       (async () => {
         try {
+          let shouldRefresh = false;
           if (sessionId) {
             await syncStudy({ userId: Number(user.id), materialId, sessionId, currentNodeIndex, nodeCompleted: true });
-            await refreshUserStats();
+            shouldRefresh = true;
           }
           await completeQuizSession({
             userId: Number(user.id),
@@ -200,6 +201,9 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
             totalQuestions: resultTotalCount,
             correctAnswers: resultCorrectCount,
           });
+          if (!shouldRefresh) {
+            await refreshUserStats();
+          }
         } catch (err) {
           console.warn('Lỗi ghi log session dữ liệu bài học:', err);
         }
@@ -207,7 +211,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     }
   }, [localShowResult, canContinue, sessionLogged, user?.id, materialId, nodeType, nodeId, batchIndex, resultTotalCount, resultCorrectCount, refreshUserStats]);
 
-  // Cập nhật tính toán và kích hoạt Chuỗi Lửa Streak hàng ngày
+  // Cập nhật tính toán Chuỗi Lửa Streak hàng ngày
   React.useEffect(() => {
     if (localShowResult && canContinue && !streakUpdated && user?.id) {
       const successRate = (resultCorrectCount / resultTotalCount) * 100;
@@ -218,24 +222,14 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     }
   }, [localShowResult, canContinue, streakUpdated, user?.id, resultCorrectCount, resultTotalCount, checkAndTriggerDailyStreak]);
 
-  // Logic thực hiện trừ tim cục bộ an toàn - Cách ly hoàn toàn khỏi vòng đời Render lại của luồng chính
+  // Logic thực hiện trừ tim cục bộ an toàn khi thất bại
   React.useEffect(() => {
     if (localShowResult && !canContinue && !heartDeducted && !heartDeductionPending) {
-      console.warn('⚡ [Assessment Failure] BẮT ĐẦU TRỪ TIM CỤC BỘ AN TOÀN');
-      
-      // Bước 1: Khóa cờ xử lý đồng bộ ngay lập tức trước khi luồng bất đồng bộ chạy
       setHeartDeductionPending(true);
       
       (async () => {
         try {
-          console.log('⚡ [QuizScreen] Gọi deductHeartOnFailure() lên server...');
-          
-          // API ở server vẫn trừ mạng và lưu sâu vào database thực tế
           const updatedHearts = await deductHeartOnFailure();
-          
-          console.log('⚡ [QuizScreen] Gọi xong deductHeartOnFailure(). Số tim mới nhận được:', updatedHearts);
-          
-          // Bước 2: Cập nhật biến tim mới vào local State (Không thay đổi globalHearts toàn cục)
           setLocalHearts(updatedHearts);
           setHeartDeducted(true);
           
@@ -243,8 +237,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
             setIsOutOfHearts(true);
           }
         } catch (err) {
-          console.warn('Lỗi xử lý trừ mạng người học (bắt lỗi để không crash):', err);
-          // Fallback giả lập trừ cục bộ khi mất mạng để app giữ nguyên màn hình kiểm tra lỗi sai
+          console.warn('Lỗi xử lý trừ mạng người học:', err);
           const localFallback = Math.max(localHearts - 1, 0);
           setLocalHearts(localFallback);
           setHeartDeducted(true);
@@ -253,44 +246,47 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
           }
         } finally {
           setHeartDeductionPending(false);
-          console.warn('⚡ [Assessment Failure] KẾT THÚC TIẾN TRÌNH TRỪ TIM AN TOÀN');
         }
       })();
     }
   }, [localShowResult, canContinue, heartDeducted, heartDeductionPending, deductHeartOnFailure, localHearts]);
 
-  // Hàm Wrapper xử lý dọn sạch trạng thái cũ để chuẩn bị làm lại bài (Reset State)
   const executeRetryWrapper = () => {
     setSessionLogged(false);
     setStreakUpdated(false);
     setHeartDeducted(false);
     setHeartDeductionPending(false);
     setIsOutOfHearts(false);
-    setLocalShowResult(false); // Đóng màn hình Kết quả cục bộ trước để giao diện lật lại mượt mà
-    handleRetry(); // Gọi hàm reset gốc từ hook
+    setLocalShowResult(false); 
+    handleRetry(); 
   };
 
-  // Hàm điều hướng thoát chủ động khi người dùng nhấn nút
   const executeExitWrapper = () => {
-  setNavigationBlocked(true);
-  // Navigate back to StudyJourney (map) with completed node info
-  console.log('EXIT WRAPPER RUNNING');
-  try {
-    const params: any = { materialId };
-    if (typeof currentNodeIndex !== 'undefined') params.completedNodeIndex = currentNodeIndex;
-    if (sessionId) params.sessionId = Number(sessionId);
-    navigation.navigate('StudyJourney' as any, params);
-  } catch (err) {
-    console.warn('Navigation error in executeExitWrapper:', err);
-  }
-};
-
-  // CRITICAL SHIELD: Wrapper an toàn để chặn auto-continue khi quiz đã hoàn thành
-  const safeHandleContinueQuestion = React.useCallback(() => {
-    if (showResult || localShowResult) {
-      console.warn('🛑 [Safety Shield] Chặn đứt lệnh tiếp tục tự động khi quiz đã hoàn thành');
-      return;
+    setNavigationBlocked(true);
+    try {
+      const params: any = { materialId };
+      if (typeof currentNodeIndex !== 'undefined') params.completedNodeIndex = currentNodeIndex;
+      if (sessionId) params.sessionId = Number(sessionId);
+      (async () => {
+        try {
+          if (canContinue && !streakUpdated && user?.id) {
+            await checkAndTriggerDailyStreak(user.id);
+            setStreakUpdated(true);
+            await refreshUserStats();
+          }
+        } catch (err) {
+          console.warn('Failed to update streak before exit:', err);
+        } finally {
+          navigation.navigate('StudyJourney' as any, params);
+        }
+      })();
+    } catch (err) {
+      console.warn('Navigation error in executeExitWrapper:', err);
     }
+  };
+
+  const safeHandleContinueQuestion = React.useCallback(() => {
+    if (showResult || localShowResult) return;
     handleContinueQuestion();
   }, [showResult, localShowResult, handleContinueQuestion]);
 
@@ -298,7 +294,9 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   if (loadError) return <QuizErrorState error={loadError} onRetry={reloadQuiz} />;
   if (questions.length === 0) return <QuizNoQuestionsState onGoBack={handleCancel} />;
 
-  // LUỒNG HIỂN THỊ MÀN HÌNH KẾT QUẢ ĐÃ ĐƯỢC BẢO VỆ
+  const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
+  const themeShadowColor = isDark ? '#193D32' : '#275245';
+
   if (localShowResult) {
     return (
       <>
@@ -309,8 +307,8 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
           totalCount={resultTotalCount}
           answers={answers}
           isBoss={isBoss}
-          onRetry={executeRetryWrapper} // Ép làm sạch bộ đếm cũ qua hàm Wrapper
-          onContinue={executeExitWrapper} // Thoát chủ động qua nút bấm vật lý
+          onRetry={executeRetryWrapper} 
+          onContinue={executeExitWrapper} 
           canContinue={canContinue}
           showStreakCelebration={currentNodeIndex === 0}
         />
@@ -320,6 +318,10 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
           globalHearts={localHearts}
           totalXp={authContext?.totalXp ?? 0}
           topUpCount={(authContext as any)?.topUpCount ?? 0}
+          colors={colors}
+          isDark={isDark}
+          themePrimaryColor={themePrimaryColor}
+          themeShadowColor={themeShadowColor}
           onRefill={async () => {
             const newHearts = await refillHeartsWithXp(1, 200);
             if (typeof newHearts === 'number') {
@@ -337,7 +339,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
 
   return (
     <>
-      <View style={modalStyles.heartOverlay}> 
+      <View style={styles.heartOverlay}> 
         <DuoHearts hearts={localHearts} />
       </View>
       <QuizUI
@@ -374,8 +376,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         pairAssignments={pairAssignments}
         isSubmitting={isSubmitting}
         
-        onCancel={showResult || localShowResult ? () => console.warn('🛑 Chặn đứng lệnh hủy tự phát từ giao diện QuizFooter.') : handleCancel}
-        
+        onCancel={showResult || localShowResult ? () => console.warn('🛑 Chặn hủy tự phát.') : handleCancel}
         onCheckInputAnswer={checkInputAnswer}
         onVerifyScrambled={verifyScrambled}
         onHandleChoiceAnswer={handleChoiceAnswer}
@@ -410,9 +411,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         onSetSelectedRightId={setSelectedRightId}
         onSetMatchingContainerHeight={setMatchingContainerHeight}
         onSetIsCorrect={setIsCorrect}
-        
         onContinue={safeHandleContinueQuestion}
-        
         showWrongPairsReview={showWrongPairsReview}
         onProceedAfterReview={proceedAfterReview}
         leftItemLayouts={leftItemLayouts}
@@ -422,12 +421,16 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   );
 }
 
-// ===== COMPONENTS PHỤ TRỢ GIAO DIỆN CHẶN TIM VÀ CSS STYLE BOX =====
+// ===== COMPONENTS PHỤ TRỢ POPUP =====
 type OutOfHeartsInterceptorProps = {
   isVisible: boolean;
   globalHearts: number;
   totalXp: number;
   topUpCount: number;
+  colors: any;
+  isDark: boolean;
+  themePrimaryColor: string;
+  themeShadowColor: string;
   onRefill: () => Promise<void>;
   onReturnToRoadmap: () => void;
   onStayOnResult: () => void;
@@ -439,6 +442,10 @@ const OutOfHeartsInterceptor: React.FC<OutOfHeartsInterceptorProps> = ({
   globalHearts,
   totalXp,
   topUpCount,
+  colors,
+  isDark,
+  themePrimaryColor,
+  themeShadowColor,
   onRefill,
   onReturnToRoadmap,
   onStayOnResult,
@@ -461,46 +468,52 @@ const OutOfHeartsInterceptor: React.FC<OutOfHeartsInterceptorProps> = ({
   const canRefill = totalXp >= 200 && topUpCount < 3;
 
   return (
-    <Modal visible={isVisible} transparent animationType="fade">
+    <Modal visible={isVisible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={modalStyles.backdrop}>
-        <View style={modalStyles.card}>
+        <View style={[modalStyles.card, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2EBE8' }]}>
           <Image source={require('../../assets/sharkCry.png')} style={modalStyles.image} />
           <Text style={modalStyles.title}>Bạn đã hết mạng!</Text>
-          <Text style={modalStyles.subtitle}>
-            Hãy nạp đầy tim bằng năng lượng XP hoặc quay về hành trình để nhận lại tim phục hồi hoàn toàn vào ngày mai.
+          <Text style={[modalStyles.subtitle, { color: colors.textSecondary }]}>
+            Đổi 200XP để nạp 1 tim hoặc quay về hành trình để nhận lại tim phục hồi hoàn toàn vào ngày mai.
           </Text>
           
-          <TouchableOpacity
-            style={[
-              modalStyles.btnPrimary,
-              (!canRefill || isRefilling) && modalStyles.btnDisabled
-            ]}
-            onPress={handleRefillPress}
-            disabled={!canRefill || isRefilling}
-          >
-            <Text style={modalStyles.btnText}>
-              {isRefilling ? 'Đang nạp năng lượng...' : 'Đổi 200XP để nạp 1 tim'}
-            </Text>
-          </TouchableOpacity>
+          <View style={modalStyles.btn3DWrapper}>
+            <View style={[modalStyles.btn3DBase, { backgroundColor: (!canRefill || isRefilling) ? (isDark ? '#334155' : '#94A3B8') : '#1899D6' }]} />
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={[modalStyles.btnPrimary, (!canRefill || isRefilling) && modalStyles.btnDisabled]}
+              onPress={handleRefillPress}
+              disabled={!canRefill || isRefilling}
+            >
+              <Text style={modalStyles.btnTextPrimary}>
+                {isRefilling ? 'Đang nạp năng lượng...' : 'Đổi 200XP lấy 1 Tim'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[modalStyles.btn3DWrapper, { marginTop: 14 }]}>
+            <View style={[modalStyles.btn3DBase, { backgroundColor: themeShadowColor }]} />
+            <TouchableOpacity 
+              activeOpacity={0.9}
+              style={[modalStyles.btnSecondary, { backgroundColor: themePrimaryColor }]} 
+              onPress={() => {
+                  onReturnToRoadmap();
+                  onClose();
+              }}
+            >
+              <Text style={modalStyles.btnTextPrimary}>Quay về hành trình</Text>
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity 
-            style={modalStyles.btnSecondary} 
-            onPress={() => {
-                onReturnToRoadmap();
-                onClose();
-            }}
-          >
-            <Text style={modalStyles.btnText}>Quay về hành trình</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={modalStyles.btnTertiary} 
+            activeOpacity={0.7}
+            style={[modalStyles.btnTertiary, { backgroundColor: isDark ? '#1E293B' : '#F3F4F6' }]} 
             onPress={() => {
                 onStayOnResult();
                 onClose();
             }}
           >
-            <Text style={[modalStyles.btnText, { color: '#111' }]}>Ở lại xem phân tích lỗi sai</Text>
+            <Text style={[modalStyles.btnTextTertiary, { color: colors.text }]}>Ở lại xem phân tích lỗi sai</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -511,61 +524,64 @@ const OutOfHeartsInterceptor: React.FC<OutOfHeartsInterceptorProps> = ({
 const modalStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(9, 44, 36, 0.75)',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   card: {
     width: '85%',
-    backgroundColor: '#fff',
-    borderRadius: 28,
+    borderRadius: 24,
     padding: 24,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#E2EBE8',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
+    borderWidth: 1,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 16 },
+      android: { elevation: 6 },
+    }),
   },
-  image: { width: 130, height: 130, marginBottom: 16, resizeMode: 'contain' },
-  title: { fontSize: 22, fontWeight: '900', color: '#FF4B4B', marginBottom: 12, letterSpacing: 0.5 },
-  subtitle: { fontSize: 14, color: '#6D8B82', marginBottom: 24, textAlign: 'center', lineHeight: 22, paddingHorizontal: 6 },
-  btnPrimary: {
-    backgroundColor: '#1CB0F6',
-    borderRadius: 16,
-    paddingVertical: 14,
+  image: { width: 120, height: 120, marginBottom: 16, resizeMode: 'contain' },
+  title: { fontSize: 21, fontWeight: '900', color: '#FF4B4B', marginBottom: 10, letterSpacing: -0.3 },
+  subtitle: { fontSize: 14, marginBottom: 24, textAlign: 'center', lineHeight: 22, fontWeight: '500', paddingHorizontal: 4 },
+  btn3DWrapper: {
+    height: 48,
+    position: 'relative',
     width: '100%',
+  },
+  btn3DBase: {
+    position: 'absolute',
+    top: 3, left: 0, right: 0, bottom: -3,
+    borderRadius: 14,
+  },
+  btnPrimary: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: '#1CB0F6',
+    borderRadius: 14,
     alignItems: 'center',
-    borderBottomWidth: 4,
-    borderBottomColor: '#1899D6',
+    justifyContent: 'center',
   },
   btnDisabled: {
-    opacity: 0.5,
     backgroundColor: '#CBD5E1',
-    borderBottomWidth: 0,
   },
   btnSecondary: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingVertical: 14,
-    width: '100%',
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: 14,
     alignItems: 'center',
-    marginTop: 14,
-    borderWidth: 2,
-    borderColor: '#E2EBE8',
-    borderBottomWidth: 4,
-    borderBottomColor: '#E2EBE8',
+    justifyContent: 'center',
   },
   btnTertiary: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 16,
+    borderRadius: 14,
     paddingVertical: 12,
     width: '100%',
     alignItems: 'center',
-    marginTop: 12,
+    justifyContent: 'center',
+    marginTop: 14,
   },
-  btnText: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 0.8 },
-  heartOverlay: { position: 'absolute', right: 16, top: 120, zIndex: 99 },
+  btnTextPrimary: { color: '#ffffff', fontWeight: '900', fontSize: 14, letterSpacing: 0.3 },
+  btnTextTertiary: { fontWeight: '800', fontSize: 14 },
+});
+
+const styles = StyleSheet.create({
+  heartOverlay: { position: 'absolute', right: 16, top: Platform.OS === 'ios' ? 56 : 16, zIndex: 99 },
 });

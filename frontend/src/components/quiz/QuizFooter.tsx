@@ -8,7 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
-import { CheckCircle2, AlertCircle } from 'lucide-react-native';
+import { CheckCircle2, AlertCircle, RefreshCw, ArrowRight } from 'lucide-react-native';
 import type { QuizType, QuizWord } from './types';
 
 type QuizFooterProps = {
@@ -80,15 +80,13 @@ export default function QuizFooter({
   onResetChosenTileIds,
 }: QuizFooterProps) {
   const [countdown, setCountdown] = useState<number | null>(null);
-  const { colors } = useTheme();
+  const { colors, theme } = useTheme();
+  const isDark = theme === 'dark';
+
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const intervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // SỬA LỖI CHÍ MẠNG: Ngăn chặn đếm ngược tự động chuyển trang khi ở câu hỏi cuối cùng
   useEffect(() => {
-    console.log('QuizFooter useEffect, isCorrect:', isCorrect, 'isMatchMode:', isMatchMode, 'matchScore:', matchScore);
-    
-    // CRITICAL: Hàm helper để dọn sạch các timer cũ khi sớm trả về
     const clearExistingTimers = () => {
       if (timeoutRef.current !== null) {
         clearTimeout(timeoutRef.current);
@@ -101,26 +99,20 @@ export default function QuizFooter({
     };
     
     if (isCorrect !== null) {
-      // Nếu là đợt ghép nối (match mode) và chưa đạt 80%, không tự động tiếp tục
       if (isMatchMode && matchScore < 80) {
         clearExistingTimers();
         setCountdown(null);
         return;
       }
 
-      // CRITICAL SHIELD: Nếu đây là câu hỏi cuối cùng, chặn đứng hoàn toàn bộ hẹn giờ tự động!
-      // Người dùng phải tự tay bấm nút "Xem kết quả" để tránh văng stack điều hướng.
       if (questionIndex + 1 >= totalQuestionCount) {
-        console.log('👉 Câu hỏi cuối cùng: Hủy kích hoạt setTimeout chuyển câu tự động.');
         clearExistingTimers();
         setCountdown(null);
         return;
       }
 
       setCountdown(3);
-      console.log('Setting timeout for onContinue');
       timeoutRef.current = setTimeout(() => {
-        console.log('Calling onContinue safely');
         onSetIsCorrect(null);
         onContinue();
       }, 3000);
@@ -165,14 +157,7 @@ export default function QuizFooter({
       default:
         return true;
     }
-  }, [
-    isMatchMode,
-    isMatchComplete,
-    stepMode,
-    inputValue,
-    selectedScrambledChars,
-    selectedOption,
-  ]);
+  }, [isMatchMode, isMatchComplete, stepMode, inputValue, selectedScrambledChars, selectedOption]);
 
   const [hasShownRetryAlert, setHasShownRetryAlert] = useState(false);
   const isCheckDisabled = !isCheckEnabled || isSubmitting;
@@ -195,9 +180,7 @@ export default function QuizFooter({
   }, [shouldShowRetryModal, hasShownRetryAlert]);
 
   const handleCheckPress = () => {
-    if (isCheckDisabled) {
-      return;
-    }
+    if (isCheckDisabled) return;
 
     if (isMatchMode) {
       onSubmitMatchAnswer();
@@ -208,15 +191,12 @@ export default function QuizFooter({
       case 'WRITE_HIRA':
         onCheckInputAnswer();
         break;
-
       case 'SCRAMBLED_HIRA':
         onVerifyScrambled();
         break;
-
       case 'MULTIPLE_CHOICE':
         onHandleChoiceAnswer();
         break;
-
       default:
         break;
     }
@@ -224,184 +204,188 @@ export default function QuizFooter({
 
   const handleRetry = () => {
     onSetIsCorrect(null);
-
     if (isMatchMode) {
       onResetMatchState();
       return;
     }
-
     onChangeInput('');
     onSelectOption(null);
     onResetChosenTileIds();
   };
 
-  const shouldShowCheckButton =
-    isMatchMode ||
-    (stepMode !== 'MATCH_MEANING' &&
-      stepMode !== 'MATCH_HIRA');
+  const shouldShowCheckButton = isMatchMode || (stepMode !== 'MATCH_MEANING' && stepMode !== 'MATCH_HIRA');
+
+  // Khởi tạo các biến màu sắc tố đậm đồng bộ Home
+  const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
+  const themeShadowColor = isDark ? '#193D32' : '#275245';
+  
+  const successColor = isDark ? '#065F46' : '#D1FAE5';
+  const successTextColor = isDark ? '#34D399' : '#065F46';
+  const successShadow = isDark ? '#044332' : '#A7F3D0';
+
+  const dangerColor = isDark ? '#7F1D1D' : '#FEE2E2';
+  const dangerTextColor = isDark ? '#F87171' : '#7F1D1D';
+  const dangerShadow = isDark ? '#5A1414' : '#FCA5A5';
 
   return (
-    <View
-      style={[
-        styles.footer,
-        { backgroundColor: colors.card, borderTopColor: colors.border },
-        isCorrect === null
-          ? {}
-          : isCorrect
-          ? { backgroundColor: colors.success }
-          : { backgroundColor: colors.danger },
-      ]}
-    >
+    <View style={[styles.footer, { backgroundColor: colors.card, borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
+      
+      {/* KHU VỰC CHƯA BẤM KIỂM TRA (TRẠNG THÁI MẶC ĐỊNH) */}
       {isCorrect === null ? (
-        shouldShowCheckButton ? (
-          <TouchableOpacity
-            activeOpacity={0.85}
-            disabled={isCheckDisabled}
-            onPress={handleCheckPress}
-            style={[
-              styles.checkButton,
-              isCheckDisabled
-                ? { backgroundColor: colors.surface, borderBottomColor: colors.border }
-                : { backgroundColor: colors.primary, borderBottomColor: colors.primary },
-            ]}
-          >
-            <Text
-              style={[
-                styles.checkButtonText,
-                isCheckDisabled
-                  ? { color: colors.textSecondary }
-                  : { color: '#FFFFFF' },
-              ]}
-            >
-              {isSubmitting ? 'Đang kiểm tra...' : 'Kiểm tra'}
+        <View style={styles.actionContainer}>
+          {!!feedbackMessage && (
+            <Text style={[styles.feedbackText, { color: isDark ? '#F87171' : '#EF4444' }]}>
+              {feedbackMessage}
             </Text>
-          </TouchableOpacity>
-        ) : null
+          )}
+
+          {shouldShowCheckButton && (
+            <View style={styles.btn3DWrapper}>
+              <View style={[styles.btn3DBase, { backgroundColor: isCheckDisabled ? (isDark ? '#1E293B' : '#E2E8F0') : themeShadowColor }]} />
+              <TouchableOpacity
+                activeOpacity={0.9}
+                disabled={isCheckDisabled}
+                onPress={handleCheckPress}
+                style={[
+                  styles.checkButton,
+                  isCheckDisabled
+                    ? { backgroundColor: isDark ? '#334155' : '#F1F5F9' }
+                    : { backgroundColor: themePrimaryColor },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.checkButtonText,
+                    isCheckDisabled
+                      ? { color: colors.textSecondary }
+                      : { color: '#FFFFFF' },
+                  ]}
+                >
+                  {isSubmitting ? 'Đang kiểm tra...' : 'Kiểm tra'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       ) : isMatchMode && matchScore < 80 ? (
-        <View>
-          <View style={styles.resultContainer}>
-            <AlertCircle size={30} color={colors.danger} />
-            <Text style={[styles.resultText, { color: colors.danger }]}>
-              Chưa đạt yêu cầu
-            </Text>
+        
+        /* TRẠNG THÁI GHÉP CẶP CHƯA ĐẠT CẦN LÀM LẠI */
+        <View style={styles.actionContainer}>
+          <View style={[styles.alertStatusBox, { backgroundColor: dangerColor, borderColor: dangerShadow }]}>
+            <View style={styles.resultHeaderRow}>
+              <AlertCircle size={22} color={dangerTextColor} />
+              <Text style={[styles.resultTitleText, { color: dangerTextColor }]}>Chưa đạt yêu cầu</Text>
+            </View>
+            <View style={styles.answerInfoBox}>
+              <Text style={[styles.answerLabelText, { color: colors.textSecondary }]}>
+                Điểm của bạn: <Text style={{ color: dangerTextColor, fontWeight: '900' }}>{matchScore}%</Text> (Yêu cầu đạt ≥ 80%)
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.answerBox}>
-            <Text style={[styles.answerLabel, { color: colors.textSecondary }]}>
-              Điểm: {matchScore}%
-            </Text>
-            <Text style={[styles.answerValue, { color: colors.text }]}>
-              Cần ≥ 80% để tiếp tục
-            </Text>
+          <View style={styles.btn3DWrapper}>
+            <View style={[styles.btn3DBase, { backgroundColor: themeShadowColor }]} />
+            <TouchableOpacity
+              activeOpacity={0.9}
+              disabled={isSubmitting}
+              onPress={handleRetry}
+              style={[styles.checkButton, { backgroundColor: themePrimaryColor }]}
+            >
+              <View style={styles.rowBtnContent}>
+                <RefreshCw size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.checkButtonText}>Làm lại đợt này</Text>
+              </View>
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            activeOpacity={0.85}
-            disabled={isSubmitting}
-            onPress={handleRetry}
-            style={[
-              styles.continueButton,
-              { backgroundColor: colors.primary, borderBottomColor: colors.primary },
-            ]}
-          >
-            <Text style={styles.continueButtonText}>Làm lại đợt này</Text>
-          </TouchableOpacity>
 
           {!isFirstMatchRound && (
+            <View style={[styles.btn3DWrapper, { marginTop: 12 }]}>
+              <View style={[styles.btn3DBase, { backgroundColor: isDark ? '#5A1414' : '#DC2626' }]} />
+              <TouchableOpacity
+                activeOpacity={0.9}
+                disabled={isSubmitting}
+                onPress={() => {
+                  onSetIsCorrect(null);
+                  onContinue();
+                }}
+                style={[styles.checkButton, { backgroundColor: isDark ? '#7F1D1D' : '#EF4444' }]}
+              >
+                <Text style={styles.checkButtonText}>Xem kết quả</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      ) : (
+        
+        /* TRẠNG THÁI ĐÃ CÓ KẾT QUẢ KIỂM TRA (ĐÚNG HOẶC SAI) */
+        <View style={styles.actionContainer}>
+          <View style={[styles.alertStatusBox, { backgroundColor: isCorrect ? successColor : dangerColor, borderColor: isCorrect ? successShadow : dangerShadow }]}>
+            <View style={styles.resultHeaderRow}>
+              {isCorrect ? (
+                <CheckCircle2 size={22} color={successTextColor} />
+              ) : (
+                <AlertCircle size={22} color={dangerTextColor} />
+              )}
+              <Text style={[styles.resultTitleText, { color: isCorrect ? successTextColor : dangerTextColor }]}>
+                {isMatchMode && isCorrect ? 'Đạt yêu cầu!' : isCorrect ? 'Chính xác!' : 'Chưa chính xác'}
+              </Text>
+            </View>
+
+            <View style={styles.answerInfoBox}>
+              <Text style={[styles.answerLabelText, { color: isDark ? colors.text : colors.textSecondary }]}>
+                {isMatchMode && isCorrect ? 'Bạn đã ghép đúng ≥ 80%' : 'Đáp án chuẩn:'}
+              </Text>
+              {!isMatchMode && (
+                <Text style={[styles.answerValueText, { color: isCorrect ? successTextColor : dangerTextColor }]}>
+                  {['WRITE_HIRA', 'SCRAMBLED_HIRA'].includes(stepMode)
+                    ? currentWord.hiragana
+                    : ['MATCH_HIRA', 'MATCH_MEANING'].includes(stepMode)
+                    ? 'Xem đáp án trong bảng ghép phía trên.'
+                    : currentWord.meaning}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {/* NÚT TIẾP TỤC ĐỔ KHỐI CƠ HỌC */}
+          <View style={styles.btn3DWrapper}>
+            <View style={[styles.btn3DBase, { backgroundColor: isCorrect ? (isDark ? '#044332' : '#059669') : (isDark ? '#5A1414' : '#DC2626') }]} />
             <TouchableOpacity
-              activeOpacity={0.85}
+              activeOpacity={0.9}
               disabled={isSubmitting}
               onPress={() => {
                 onSetIsCorrect(null);
                 onContinue();
               }}
               style={[
-                styles.continueButton,
-                { backgroundColor: colors.danger, borderBottomColor: colors.danger },
-                { marginTop: 12 },
+                styles.checkButton,
+                isCorrect 
+                  ? { backgroundColor: isDark ? '#065F46' : '#10B981' } 
+                  : { backgroundColor: isDark ? '#7F1D1D' : '#EF4444' }
               ]}
             >
-              <Text style={styles.continueButtonText}>Xem kết quả</Text>
+              <View style={styles.rowBtnContent}>
+                <Text style={styles.checkButtonText}>
+                  {isMatchMode && isCorrect
+                    ? isLastMatchRound
+                      ? 'Câu tiếp theo'
+                      : 'Đợt tiếp theo'
+                    : questionIndex + 1 >= totalQuestionCount
+                    ? 'Xem kết quả'
+                    : 'Tiếp tục'}
+                </Text>
+                <ArrowRight size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+              </View>
             </TouchableOpacity>
-          )}
-        </View>
-      ) : (
-        <View>
-          <View style={styles.resultContainer}>
-            {isCorrect ? (
-              <CheckCircle2 size={30} color={colors.success} />
-            ) : (
-              <AlertCircle size={30} color={colors.danger} />
-            )}
-
-            <Text
-              style={[
-                styles.resultText,
-                isCorrect ? { color: colors.success } : { color: colors.danger },
-              ]}
-            >
-              {isMatchMode && isCorrect
-                ? 'Đạt yêu cầu!'
-                : isCorrect
-                ? 'Chính xác!'
-                : 'Sai rồi!'}
-            </Text>
           </View>
-
-          <View style={styles.answerBox}>
-            <Text style={[styles.answerLabel, { color: isCorrect ? colors.success : colors.danger }]}> 
-              {isMatchMode && isCorrect ? `Điểm: ${matchScore}%` : 'Đáp án đúng:'}
-            </Text>
-
-            <Text style={[styles.answerValue, { color: isCorrect ? colors.success : colors.danger }]}> 
-              {isMatchMode && isCorrect
-                ? `Bạn đã ghép đúng ≥ 80%`
-                : ['WRITE_HIRA', 'SCRAMBLED_HIRA'].includes(stepMode)
-                ? currentWord.hiragana
-                : ['MATCH_HIRA', 'MATCH_MEANING'].includes(stepMode)
-                ? 'Xem đáp án đúng trong bảng ghép phía trên.'
-                : currentWord.meaning}
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            activeOpacity={0.85}
-            disabled={isSubmitting}
-            onPress={() => {
-              onSetIsCorrect(null);
-              onContinue();
-            }}
-            style={[
-              styles.continueButton,
-              isCorrect
-                ? { backgroundColor: colors.success, borderBottomColor: colors.success }
-                : { backgroundColor: colors.danger, borderBottomColor: colors.danger },
-            ]}
-          >
-            <Text style={styles.continueButtonText}>
-              {isMatchMode && isCorrect
-                ? isLastMatchRound
-                  ? 'Câu tiếp theo'
-                  : 'Đợt tiếp theo'
-                : questionIndex + 1 >= totalQuestionCount
-                ? 'Xem kết quả'
-                : 'Tiếp tục'}
-            </Text>
-          </TouchableOpacity>
           
-          {/* Chỉ hiển thị chữ countdown nếu không phải câu hỏi cuối */}
+          {/* ĐẾM NGƯỢC TỰ ĐỘNG CHUYỂN TRANG TINH GỌN */}
           {countdown !== null && questionIndex + 1 < totalQuestionCount && (
-            <Text style={styles.autoNextText}>
-              Câu tiếp theo ({countdown}s)
+            <Text style={[styles.autoNextText, { color: colors.textSecondary }]}>
+              Tự động chuyển câu sau {countdown}s...
             </Text>
           )}
         </View>
-      )}
-
-      {!!feedbackMessage && isCorrect === null && (
-        <Text style={styles.feedbackText}>
-          {feedbackMessage}
-        </Text>
       )}
     </View>
   );
@@ -409,72 +393,91 @@ export default function QuizFooter({
 
 const styles = StyleSheet.create({
   footer: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 30,
-    borderTopWidth: 2,
-    borderTopColor: '#E5E5E5',
-    minHeight: 120,
-  },
-  checkButton: {
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    borderTopWidth: 1,
+    minHeight: 110,
     justifyContent: 'center',
-    borderBottomWidth: 4,
   },
-  checkButtonText: {
-    fontSize: 18,
-    fontWeight: '900',
-    textTransform: 'uppercase',
+  actionContainer: {
+    width: '100%',
   },
-  resultContainer: {
+  // Hộp trạng thái thông báo phẳng bo cong cao cấp thay thế cho việc đổi màu toàn bộ footer
+  alertStatusBox: {
+    borderRadius: 20,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  resultHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
+    gap: 8,
+    marginBottom: 6,
   },
-  resultText: {
-    fontSize: 20,
+  resultTitleText: {
+    fontSize: 17,
     fontWeight: '900',
   },
-  answerBox: {
-    marginBottom: 16,
+  answerInfoBox: {
+    paddingLeft: 30,
   },
-  answerLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.8,
+  answerLabelText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
-  answerValue: {
-    fontSize: 18,
-    fontWeight: '800',
+  answerValueText: {
+    fontSize: 16,
+    fontWeight: '900',
+    marginTop: 2,
   },
-  continueButton: {
-    borderRadius: 16,
-    paddingVertical: 18,
+  rowBtnContent: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderBottomWidth: 4,
   },
-  continueButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
+  // Kiến trúc nút cơ học 3D đồng bộ dự án
+  btn3DWrapper: {
+    height: 52,
+    position: 'relative',
+    width: '100%',
+  },
+  btn3DBase: {
+    position: 'absolute',
+    top: 4,
+    left: 0,
+    right: 0,
+    bottom: -4,
+    borderRadius: 16,
+  },
+  checkButton: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkButtonText: {
+    fontSize: 16,
     fontWeight: '900',
-    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    color: '#FFFFFF',
   },
   autoNextText: {
-    marginTop: 10,
-    fontSize: 13,
+    marginTop: 12,
+    fontSize: 12,
     textAlign: 'center',
-    color: '#8BA39D',
     fontWeight: '700',
+    opacity: 0.6,
   },
   feedbackText: {
-    marginTop: 10,
+    marginBottom: 12,
     textAlign: 'center',
-    color: '#EA2B2B',
-    fontWeight: '700',
-    fontSize: 14,
+    fontWeight: '800',
+    fontSize: 13,
   },
 });

@@ -15,9 +15,13 @@ import {
   TouchableOpacity,
   View,
   StyleSheet,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Dimensions,
 } from 'react-native';
 
-import { Menu, Plus, X } from 'lucide-react-native';
+import { Menu, Plus, X, Share2 } from 'lucide-react-native';
 
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -27,6 +31,7 @@ import {
   getFlashcards,
   bulkCreateFlashcards,
   updateFlashcard,
+  shareMaterial,
 } from '../api/api';
 
 import VocabularyItem from './VocabularyItem';
@@ -52,10 +57,16 @@ export default function VocabularyManager({
   materialTitle,
   iconSize = 18,
 }: VocabularyManagerProps) {
-  const { user } = useAuthContext();
+  const { user, refreshNotificationCount } = useAuthContext();
   const { colors } = useTheme();
 
   const [cards, setCards] = useState<FlashcardData[]>([]);
+  const [dropdownVisible, setDropdownVisible] = useState(false);
+  const [dropdownAnchor, setDropdownAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [shareError, setShareError] = useState('');
+  const [shareLoading, setShareLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -199,6 +210,51 @@ export default function VocabularyManager({
     }
   };
 
+  const isValidEmail = (email: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  };
+
+  const openShareModal = () => {
+    setDropdownVisible(false);
+    setRecipientEmail('');
+    setShareError('');
+    setShareModalVisible(true);
+  };
+
+  const closeShareModal = () => {
+    setShareModalVisible(false);
+    setRecipientEmail('');
+    setShareError('');
+  };
+
+  const handleShareMaterial = async () => {
+    if (!user?.id) return;
+    const email = recipientEmail.trim();
+    if (!email || !isValidEmail(email)) {
+      setShareError('Vui lòng nhập email hợp lệ.');
+      return;
+    }
+
+    setShareLoading(true);
+    try {
+      const result = await shareMaterial(Number(user.id), email, materialId);
+      showToast(`Đã chia sẻ thẻ cho ${email}`);
+      Alert.alert('Chia sẻ thành công', `Bạn đã chia sẻ thẻ cho ${email}, chúc mừng bạn được +100xp.`);
+      closeShareModal();
+      if (refreshNotificationCount) {
+        refreshNotificationCount();
+      }
+      if (result?.senderXp !== undefined) {
+        // Optional: refresh UI or update context if needed
+      }
+    } catch (error: any) {
+      const message = error?.message || 'Không thể gửi yêu cầu chia sẻ. Vui lòng thử lại.';
+      Alert.alert('Lỗi chia sẻ', message);
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
   const items = useMemo(() => cards, [cards]);
 
   /* ================= UI STYLES ================= */
@@ -298,6 +354,65 @@ export default function VocabularyManager({
       elevation: 3,
       zIndex: 10,
     },
+    dropdownOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.35)',
+      justifyContent: 'flex-end',
+    },
+    dropdownBox: {
+      borderTopLeftRadius: 18,
+      borderTopRightRadius: 18,
+      paddingVertical: 10,
+      borderWidth: 1,
+      marginHorizontal: 14,
+      marginBottom: 20,
+    },
+    dropdownItem: {
+      paddingVertical: 16,
+      paddingHorizontal: 18,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    dropdownText: {
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    dropdownRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    shareCard: {
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      padding: 20,
+      marginHorizontal: 16,
+      marginBottom: 100,
+    },
+    input: {
+      borderWidth: 1,
+      borderRadius: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      marginBottom: 16,
+      fontSize: 15,
+    },
+    actionBtn: {
+      borderRadius: 16,
+      paddingVertical: 14,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    actionBtnText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    errorText: {
+      marginBottom: 14,
+      fontSize: 13,
+      fontWeight: '600',
+    },
   });
 
   return (
@@ -305,14 +420,88 @@ export default function VocabularyManager({
       {/* BUTTON OPEN */}
       <TouchableOpacity
         style={[styles.fab, dynamicStyles.fab]}
-        onPress={toggleSheet}
+        onPressIn={(e) => {
+          const { pageX, pageY } = e.nativeEvent;
+          setDropdownAnchor({ x: pageX, y: pageY });
+        }}
+        onPress={() => setDropdownVisible(true)}
         activeOpacity={0.8}
         hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
         accessibilityRole="button"
-        accessibilityLabel="Quản lý từ vựng"
+        accessibilityLabel="Quản lý hoặc chia sẻ từ vựng"
       >
         <Menu size={iconSize} color={colors.primary} />
       </TouchableOpacity>
+
+      <Modal visible={dropdownVisible} transparent animationType="fade">
+        <TouchableOpacity style={dynamicStyles.dropdownOverlay} activeOpacity={1} onPress={() => setDropdownVisible(false)}>
+          {/* Positioned dropdown anchored to press coordinates */}
+          {dropdownAnchor ? (
+            (() => {
+              const { width: screenW } = Dimensions.get('window');
+              const boxWidth = Math.min(260, screenW - 24);
+              const left = Math.max(8, Math.min(dropdownAnchor.x - boxWidth + 32, screenW - boxWidth - 8));
+              const top = dropdownAnchor.y + 8;
+              return (
+                <View style={{ position: 'absolute', left, top, width: boxWidth }}>
+                  <View style={[dynamicStyles.dropdownBox, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+                    <TouchableOpacity style={dynamicStyles.dropdownItem} onPress={() => { setDropdownVisible(false); toggleSheet(); }}>
+                      <Text style={[dynamicStyles.dropdownText, { color: colors.text }]}>Quản lý</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={dynamicStyles.dropdownItem} onPress={openShareModal}>
+                      <View style={dynamicStyles.dropdownRow}>
+                        <Share2 size={16} color={colors.primary} />
+                        <Text style={[dynamicStyles.dropdownText, { color: colors.text }]}>Chia sẻ</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })()
+          ) : null}
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={shareModalVisible} transparent animationType="fade">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <TouchableOpacity style={dynamicStyles.dropdownOverlay} activeOpacity={1} onPress={closeShareModal} />
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }} keyboardShouldPersistTaps="handled">
+            <View style={[dynamicStyles.shareCard, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+              <View style={dynamicStyles.header}>
+                <View>
+                  <Text style={dynamicStyles.title}>Chia sẻ thẻ Material</Text>
+                  <Text style={dynamicStyles.subtitle}>Nhập email người nhận để gửi toàn bộ bộ từ vựng.</Text>
+                </View>
+                <TouchableOpacity onPress={closeShareModal}>
+                  <X size={20} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={[dynamicStyles.input, { borderColor: colors.border, color: colors.text, backgroundColor: colors.background }]}
+                placeholder="Email người nhận"
+                placeholderTextColor={colors.textSecondary}
+                value={recipientEmail}
+                onChangeText={(text) => { setRecipientEmail(text); setShareError(''); }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+              />
+              {shareError ? <Text style={[dynamicStyles.errorText, { color: '#EF4444' }]}>{shareError}</Text> : null}
+              <TouchableOpacity
+                style={[dynamicStyles.actionBtn, { backgroundColor: colors.primary }]}
+                onPress={handleShareMaterial}
+                activeOpacity={0.8}
+                disabled={shareLoading}
+              >
+                <Text style={dynamicStyles.actionBtnText}>{shareLoading ? 'Đang gửi...' : 'Gửi'}</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* SHEET */}
       <Modal visible={isOpen} transparent animationType="none">

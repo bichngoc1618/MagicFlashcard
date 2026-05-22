@@ -23,21 +23,24 @@ function AnimatedTab({
   label,
   active,
   onPress,
-  colors
+  colors,
+  themePrimaryColor
 }: {
   icon: React.ReactNode;
   label: string;
   active: boolean;
   onPress?: () => void;
   colors: any;
+  themePrimaryColor: string;
 }) {
-  const scale = useRef(new Animated.Value(active ? 1.1 : 1)).current;
+  // Đồng bộ hiệu ứng mờ mịn màng tinh tế thay vì phóng to thu nhỏ cơ học thô cứng
+  const fadeAnim = useRef(new Animated.Value(active ? 1 : 0.45)).current;
 
   useEffect(() => {
-    Animated.spring(scale, {
-      toValue: active ? 1.1 : 1,
-      useNativeDriver: true,
-      friction: 8
+    Animated.timing(fadeAnim, {
+      toValue: active ? 1 : 0.45,
+      duration: 200,
+      useNativeDriver: true
     }).start();
   }, [active]);
 
@@ -47,14 +50,20 @@ function AnimatedTab({
         style={[
           styles.tabBtn,
           {
-            transform: [{ scale }]
+            opacity: fadeAnim
           }
         ]}
       >
-        <View style={{ opacity: active ? 1 : 0.5 }}>
+        <View style={styles.iconContainer}>
           {icon}
         </View>
-        <Text style={[styles.label, active && styles.labelActive, { color: active ? colors.primary : colors.textSecondary }]}>
+        <Text 
+          style={[
+            styles.label, 
+            active ? styles.labelActive : styles.labelInactive, 
+            { color: active ? themePrimaryColor : colors.textSecondary }
+          ]}
+        >
           {label}
         </Text>
       </Animated.View>
@@ -65,6 +74,10 @@ function AnimatedTab({
 export default function BottomNavigation({ activeTab }: Props) {
   const navigation = useNavigation<StackNavigationProp<any>>();
   const { colors, theme } = useTheme();
+  const isDark = theme === 'dark';
+
+  // Ép đồng bộ bộ màu sắc tố đậm lục bảo thống nhất của hệ thống
+  const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
 
   const dynamicStyles = StyleSheet.create({
     wrapper: {
@@ -72,8 +85,8 @@ export default function BottomNavigation({ activeTab }: Props) {
       bottom: 0,
       left: 0,
       right: 0,
-      paddingBottom: Platform.OS === 'ios' ? 25 : 12,
-      paddingHorizontal: 12,
+      paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+      paddingHorizontal: 16,
       backgroundColor: 'transparent',
       zIndex: 9999
     },
@@ -82,16 +95,15 @@ export default function BottomNavigation({ activeTab }: Props) {
       justifyContent: 'space-between',
       alignItems: 'center',
       backgroundColor: colors.card,
-      borderRadius: 30,
-      paddingVertical: 10,
-      paddingHorizontal: 10,
-      shadowColor: '#000',
-      shadowOpacity: theme === 'dark' ? 0.3 : 0.1,
-      shadowRadius: 10,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 10,
+      borderRadius: 24, // Đồng bộ bán kính bo cong 24 với các thẻ bài học
+      paddingVertical: 12,
+      paddingHorizontal: 8,
       borderWidth: 1,
-      borderColor: colors.border
+      borderColor: isDark ? '#1E293B' : '#F1F5F9',
+      ...Platform.select({
+        ios: { shadowColor: '#000', shadowOpacity: isDark ? 0.25 : 0.03, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+        android: { elevation: 4 },
+      }),
     }
   });
 
@@ -100,42 +112,47 @@ export default function BottomNavigation({ activeTab }: Props) {
       <View style={dynamicStyles.container}>
         <AnimatedTab
           label="Trang chủ"
-          icon={<Home size={18} color={activeTab === 'home' ? colors.primary : colors.textSecondary} />}
+          icon={<Home size={18} color={activeTab === 'home' ? themePrimaryColor : colors.textSecondary} />}
           active={activeTab === 'home'}
           onPress={() => navigation.navigate('Home')}
           colors={colors}
+          themePrimaryColor={themePrimaryColor}
         />
 
         <AnimatedTab
           label="Hành trình"
-          icon={<BookOpenText size={18} color={activeTab === 'study' ? colors.primary : colors.textSecondary} />}
+          icon={<BookOpenText size={18} color={activeTab === 'study' ? themePrimaryColor : colors.textSecondary} />}
           active={activeTab === 'study'}
           onPress={() => navigation.navigate('StudyJourney', { materialId: 1 })}
           colors={colors}
+          themePrimaryColor={themePrimaryColor}
         />
 
         <AnimatedTab
           label="Luyện nói"
-          icon={<Mic2 size={18} color={activeTab === 'SpeakingPractice' ? colors.primary : colors.textSecondary} />}
+          icon={<Mic2 size={18} color={activeTab === 'SpeakingPractice' ? themePrimaryColor : colors.textSecondary} />}
           active={activeTab === 'SpeakingPractice'}
           onPress={() => navigation.navigate('SpeakingPractice')}
           colors={colors}
+          themePrimaryColor={themePrimaryColor}
         />
 
         <AnimatedTab
           label="Thư viện"
-          icon={<Library size={18} color={activeTab === 'library' ? colors.primary : colors.textSecondary} />}
+          icon={<Library size={18} color={activeTab === 'library' ? themePrimaryColor : colors.textSecondary} />}
           active={activeTab === 'library'}
           onPress={() => navigation.navigate('Study')}
           colors={colors}
+          themePrimaryColor={themePrimaryColor}
         />
 
         <AnimatedTab
           label="Cá nhân"
-          icon={<UserRound size={18} color={activeTab === 'profile' ? colors.primary : colors.textSecondary} />}
+          icon={<UserRound size={18} color={activeTab === 'profile' ? themePrimaryColor : colors.textSecondary} />}
           active={activeTab === 'profile'}
           onPress={() => navigation.navigate('Profile')}
           colors={colors}
+          themePrimaryColor={themePrimaryColor}
         />
       </View>
     </View>
@@ -145,14 +162,25 @@ export default function BottomNavigation({ activeTab }: Props) {
 const styles = StyleSheet.create({
   tabBtn: {
     flex: 1,
-    alignItems: 'center'
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  iconContainer: {
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   label: {
-    marginTop: 4,
-    fontSize: 9,
-    fontWeight: '500'
+    marginTop: 5,
+    fontSize: 10,
+    letterSpacing: -0.1,
+    textAlign: 'center',
   },
   labelActive: {
-    fontWeight: '700'
+    fontWeight: '900',
+  },
+  labelInactive: {
+    fontWeight: '700',
   }
 });

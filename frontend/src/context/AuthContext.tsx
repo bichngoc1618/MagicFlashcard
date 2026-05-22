@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 
 
-import { login as loginApi, register as registerApi, updateGamificationStats, refillHearts, getUserStats, deductHearts } from '../api/api';
+import { login as loginApi, register as registerApi, updateGamificationStats, refillHearts, getUserStats, deductHearts, getNotifications } from '../api/api';
 
 export type UserProfile = {
   id: number;
@@ -33,6 +33,8 @@ type AuthContextValue = {
   updateXpAndStreakInDB: (earnedXp: number) => Promise<void>;
   refillHeartsWithXp: (hearts?: number, cost?: number) => Promise<number | undefined>;
   refreshUserStats: () => Promise<void>;
+  refreshNotificationCount: () => Promise<void>;
+  notificationCount: number;
   handleHeartLoss: () => void;
   deductHeartOnFailure: () => Promise<number>;
   checkAndTriggerDailyStreak: (userId: number) => Promise<StreakTriggerResult>;
@@ -57,6 +59,7 @@ export const AuthProvider = ({ children }: any) => {
   // Track daily top-up count to limit purchases (max 3 per day)
   const [topUpCount, setTopUpCount] = useState<number>(0);
   const [topUpDate, setTopUpDate] = useState<string>('');
+  const [notificationCount, setNotificationCount] = useState<number>(0);
 
   const setGamificationState = (profile: any) => {
     console.log('🎮 Setting gamification state:', { 
@@ -209,11 +212,25 @@ const deductHeartOnFailure = useCallback(async (): Promise<number> => {
     }
   };
 
+  const refreshNotificationCount = async () => {
+    if (!user?.id) {
+      setNotificationCount(0);
+      return;
+    }
+    try {
+      const result = await getNotifications(user.id);
+      setNotificationCount(Array.isArray(result.notifications) ? result.notifications.filter((item: any) => item.is_read === 0).length : 0);
+    } catch (e) {
+      console.warn('Failed to refresh notification count:', e);
+    }
+  };
+
   // 🛡️ LÁ CHẮN 2: CHỈ CHẠY loadUserData KHI USER ID THAY ĐỔI THỰC TẾ (Đăng nhập/Đăng xuất), 
   // Loại bỏ hoàn toàn streakCount khỏi mảng dependency để triệt tiêu vòng lặp re-render vô tận.
   useEffect(() => {
     if (user?.id) {
       loadUserData();
+      refreshNotificationCount();
     }
   }, [user?.id]); 
 
@@ -347,6 +364,8 @@ const deductHeartOnFailure = useCallback(async (): Promise<number> => {
         updateXpAndStreakInDB,
         refillHeartsWithXp,
         refreshUserStats,
+        refreshNotificationCount,
+        notificationCount,
         purchaseHeartWithXP,
         topUpCount,
         topUpDate,

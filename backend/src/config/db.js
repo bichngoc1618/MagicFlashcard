@@ -10,7 +10,7 @@ const db = mysql.createPool({
     user: process.env.DB_USER,
     password: process.env.DB_PASS,
     database: process.env.DB_NAME,
-    port: process.env.DB_PORT || 4000, // TiDB mặc định là 4000, XAMPP là 3306
+    port: Number(process.env.DB_PORT || 3306), // MySQL/XAMPP mặc định là 3306, TiDB có thể dùng 4000
     waitForConnections: true,
     connectionLimit: 10,
     // Ép kiểu cấu hình SSL chuẩn chỉnh theo đúng cú pháp TiDB Cloud yêu cầu

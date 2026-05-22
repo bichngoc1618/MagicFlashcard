@@ -368,7 +368,7 @@ export default function StudyJourneyScreen({
   route,
   navigation,
 }: StudyJourneyScreenProps) {
-  const { user, globalHearts, totalXp, refillHeartsWithXp, topUpCount } = useAuthContext();
+  const { user, globalHearts, totalXp, refillHeartsWithXp, topUpCount, notificationCount, refreshNotificationCount } = useAuthContext();
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -575,7 +575,8 @@ export default function StudyJourneyScreen({
   useFocusEffect(
     useCallback(() => {
       loadJourney();
-    }, [loadJourney]),
+      refreshNotificationCount();
+    }, [loadJourney, refreshNotificationCount]),
   );
 
   useEffect(() => {
@@ -622,6 +623,8 @@ export default function StudyJourneyScreen({
               searchText.trim() &&
               navigation.navigate('Dictionary', { query: searchText.trim() })
             }
+            notificationCount={notificationCount}
+            onNotificationPress={() => navigation.navigate('Notifications')}
           />
 
           <View style={[styles.progressCardContainer, { backgroundColor: colors.card, borderColor: isDark ? '#334155' : '#F1F5F9' }]}>

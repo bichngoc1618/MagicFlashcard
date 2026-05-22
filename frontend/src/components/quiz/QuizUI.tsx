@@ -7,10 +7,12 @@ import {
   View,
   Text,
   StyleSheet,
+  Modal,
+  TouchableOpacity,
+  Dimensions
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
-import { Modal, TouchableOpacity, Dimensions } from 'react-native';
-import { X } from 'lucide-react-native';
+import { X, BookOpen } from 'lucide-react-native';
 
 import ScreenContainer from '../ScreenContainer';
 import type { QuizType, QuizWord } from './types';
@@ -83,21 +85,82 @@ export interface QuizUIProps {
   rightItemLayouts: React.MutableRefObject<Record<string, LayoutRectangle>>;
 }
 
-export default function QuizUI(props: QuizUIProps) {
-  const { colors } = useTheme();
+export default function QuizUI({
+  activeType,
+  currentWord,
+  stepProgress,
+  questionIndex,
+  totalQuestionCount,
+  isBoss,
+  isCorrect,
+  inputValue,
+  selectedOption,
+  chosenTileIds,
+  matchedIds,
+  wrongPairs,
+  pairAssignments,
+  wrongPair,
+  matchingContainerHeight,
+  currentMatchWords,
+  currentMatchRightItems,
+  multipleChoiceOptions,
+  selectedScrambledChars,
+  tiles,
+  selectedLeftId,
+  selectedRightId,
+  remainingSeconds,
+  isMatchMode,
+  isTimeUp,
+  hasSubmitted,
+  autoNextCountdown,
+  selectedAnswer,
+  matchRound,
+  matchRoundCount,
+  onCancel,
+  onCheckInputAnswer,
+  onVerifyScrambled,
+  onHandleChoiceAnswer,
+  onSubmitMatchAnswer,
+  onHandlePairSelection,
+  isMatchComplete,
+  matchScore,
+  feedbackMessage,
+  isSubmitting,
+  onChangeInput,
+  onSelectOption,
+  onPressTile,
+  onRemoveTile,
+  onResetChosenTileIds,
+  onSetSelectedLeftId,
+  onSetSelectedRightId,
+  onSetMatchingContainerHeight,
+  onResetMatchState,
+  onSetIsCorrect,
+  onContinue,
+  showWrongPairsReview,
+  onProceedAfterReview,
+  leftItemLayouts,
+  rightItemLayouts,
+}: QuizUIProps) {
+  const { colors, theme } = useTheme();
+  const isDark = theme === 'dark';
+
+  // Hệ màu sắc tố trơn đậm đà đồng bộ hệ thống Home
+  const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
+  const themeShadowColor = isDark ? '#193D32' : '#275245';
 
   return (
     <ScreenContainer>
-      <View style={[styles.mainWrapper, { backgroundColor: colors.background }] }>
+      <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
         {/* 1. Header cố định */}
         <QuizHeader
-          stepProgress={props.stepProgress}
-          activeType={props.activeType}
-          isBoss={props.isBoss}
-          questionIndex={props.questionIndex}
-          totalQuestionCount={props.totalQuestionCount}
-          remainingSeconds={props.remainingSeconds}
-          onCancel={props.onCancel}
+          stepProgress={stepProgress}
+          activeType={activeType}
+          isBoss={isBoss}
+          questionIndex={questionIndex}
+          totalQuestionCount={totalQuestionCount}
+          remainingSeconds={remainingSeconds}
+          onCancel={onCancel}
         />
 
         <KeyboardAvoidingView
@@ -112,117 +175,136 @@ export default function QuizUI(props: QuizUIProps) {
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
-            <Text style={[styles.typeLabel, { color: colors.primary }]}> 
-              {props.activeType.replace(/_/g, ' ')}
-            </Text>
+            {/* Nhãn loại câu hỏi tinh chỉnh đậm đà hơn */}
+            <View style={[styles.typeLabelBadge, { backgroundColor: isDark ? 'rgba(59, 122, 102, 0.15)' : '#D1FAE5' }]}>
+              <Text style={[styles.typeLabel, { color: themePrimaryColor }]}>
+                {activeType.replace(/_/g, ' ')}
+              </Text>
+            </View>
 
             <QuizQuestionBody
-              activeType={props.activeType}
-              currentWord={props.currentWord}
-              inputValue={props.inputValue}
-              selectedOption={props.selectedOption}
-              chosenTileIds={props.chosenTileIds}
-              matchedIds={props.matchedIds}
-              wrongPair={props.wrongPair}
-              matchingContainerHeight={props.matchingContainerHeight}
-              currentMatchWords={props.currentMatchWords}
-              currentMatchRightItems={props.currentMatchRightItems}
-              wrongPairs={props.wrongPairs}
-              pairAssignments={props.pairAssignments}
-              multipleChoiceOptions={props.multipleChoiceOptions}
-              selectedScrambledChars={props.selectedScrambledChars}
-              tiles={props.tiles}
-              selectedLeftId={props.selectedLeftId}
-              selectedRightId={props.selectedRightId}
-              remainingSeconds={props.remainingSeconds}
-              isMatchMode={props.isMatchMode}
-              isTimeUp={props.isTimeUp}
-              hasSubmitted={props.hasSubmitted}
-              selectedAnswer={props.selectedAnswer}
-              matchRound={props.matchRound}
-              matchRoundCount={props.matchRoundCount}
-              onHandleChoiceAnswer={props.onHandleChoiceAnswer}
-              onHandlePairSelection={props.onHandlePairSelection}
-              isMatchComplete={props.isMatchComplete}
-              matchScore={props.matchScore}
-              onChangeInput={props.onChangeInput}
-              onSelectOption={props.onSelectOption}
-              onPressTile={props.onPressTile}
-              onRemoveTile={props.onRemoveTile}
-              onResetChosenTileIds={props.onResetChosenTileIds}
-              onSetSelectedLeftId={props.onSetSelectedLeftId}
-              onSetSelectedRightId={props.onSetSelectedRightId}
-              onSetMatchingContainerHeight={props.onSetMatchingContainerHeight}
-              leftItemLayouts={props.leftItemLayouts}
-              rightItemLayouts={props.rightItemLayouts}
+              activeType={activeType}
+              currentWord={currentWord}
+              inputValue={inputValue}
+              selectedOption={selectedOption}
+              chosenTileIds={chosenTileIds}
+              matchedIds={matchedIds}
+              wrongPair={wrongPair}
+              matchingContainerHeight={matchingContainerHeight}
+              currentMatchWords={currentMatchWords}
+              currentMatchRightItems={currentMatchRightItems}
+              wrongPairs={wrongPairs}
+              pairAssignments={pairAssignments}
+              multipleChoiceOptions={multipleChoiceOptions}
+              selectedScrambledChars={selectedScrambledChars}
+              tiles={tiles}
+              selectedLeftId={selectedLeftId}
+              selectedRightId={selectedRightId}
+              remainingSeconds={remainingSeconds}
+              isMatchMode={isMatchMode}
+              isTimeUp={isTimeUp}
+              hasSubmitted={hasSubmitted}
+              selectedAnswer={selectedAnswer}
+              matchRound={matchRound}
+              matchRoundCount={matchRoundCount}
+              onHandleChoiceAnswer={onHandleChoiceAnswer}
+              onHandlePairSelection={onHandlePairSelection}
+              isMatchComplete={isMatchComplete}
+              matchScore={matchScore}
+              onChangeInput={onChangeInput}
+              onSelectOption={onSelectOption}
+              onPressTile={onPressTile}
+              onRemoveTile={onRemoveTile}
+              onResetChosenTileIds={onResetChosenTileIds}
+              onSetSelectedLeftId={onSetSelectedLeftId}
+              onSetSelectedRightId={onSetSelectedRightId}
+              onSetMatchingContainerHeight={onSetMatchingContainerHeight}
+              onResetMatchState={onResetMatchState}
+              onSetIsCorrect={onSetIsCorrect}
+              onContinue={onContinue}
+              leftItemLayouts={leftItemLayouts}
+              rightItemLayouts={rightItemLayouts}
             />
           </ScrollView>
 
           {/* 3. Footer chứa nút "Kiểm tra" cố định ở đáy */}
-          <View style={[styles.footerWrapper, { backgroundColor: colors.card, borderTopColor: colors.border }] }>
+          <View style={[styles.footerWrapper, { backgroundColor: colors.card, borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
             <QuizFooter
-              stepMode={props.activeType}
-              isCorrect={props.isCorrect}
-              currentWord={props.currentWord}
-              inputValue={props.inputValue}
-              selectedOption={props.selectedOption}
-              selectedScrambledChars={props.selectedScrambledChars}
-              questionIndex={props.questionIndex}
-              totalQuestionCount={props.totalQuestionCount}
-              isMatchMode={props.isMatchMode}
-              isMatchComplete={props.isMatchComplete}
-              matchRound={props.matchRound}
-              matchRoundCount={props.matchRoundCount}
-              matchScore={props.matchScore}
-              feedbackMessage={props.feedbackMessage}
-              isSubmitting={props.isSubmitting}
-              autoNextCountdown={props.autoNextCountdown}
-              onCheckInputAnswer={props.onCheckInputAnswer}
-              onVerifyScrambled={props.onVerifyScrambled}
-              onHandleChoiceAnswer={props.onHandleChoiceAnswer}
-              onSubmitMatchAnswer={props.onSubmitMatchAnswer}
-              onContinue={props.onContinue}
-              onResetMatchState={props.onResetMatchState}
-              onSetIsCorrect={props.onSetIsCorrect}
-              onChangeInput={props.onChangeInput}
-              onSelectOption={props.onSelectOption}
-              onResetChosenTileIds={props.onResetChosenTileIds}
-              onReviewMistakes={() => props.onContinue()}
+              stepMode={activeType}
+              isCorrect={isCorrect}
+              currentWord={currentWord}
+              inputValue={inputValue}
+              selectedOption={selectedOption}
+              selectedScrambledChars={selectedScrambledChars}
+              questionIndex={questionIndex}
+              totalQuestionCount={totalQuestionCount}
+              isMatchMode={isMatchMode}
+              isMatchComplete={isMatchComplete}
+              matchRound={matchRound}
+              matchRoundCount={matchRoundCount}
+              matchScore={matchScore}
+              feedbackMessage={feedbackMessage}
+              isSubmitting={isSubmitting}
+              autoNextCountdown={autoNextCountdown}
+              onCheckInputAnswer={onCheckInputAnswer}
+              onVerifyScrambled={onVerifyScrambled}
+              onHandleChoiceAnswer={onHandleChoiceAnswer}
+              onSubmitMatchAnswer={onSubmitMatchAnswer}
+              onContinue={onContinue}
+              onResetMatchState={onResetMatchState}
+              onSetIsCorrect={onSetIsCorrect}
+              onChangeInput={onChangeInput}
+              onSelectOption={onSelectOption}
+              onResetChosenTileIds={onResetChosenTileIds}
+              onReviewMistakes={() => onContinue()}
             />
           </View>
         </KeyboardAvoidingView>
 
-        <Modal visible={props.showWrongPairsReview} transparent animationType="slide">
+        {/* MODAL XEM LẠI CÂU SAI HOẠT HÌNH PHẲNG CHUYÊN NGHIỆP */}
+        <Modal visible={showWrongPairsReview} transparent animationType="slide" onRequestClose={onProceedAfterReview}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
               <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Xem lại câu sai</Text>
-                <TouchableOpacity onPress={props.onProceedAfterReview}>
-                  <X size={24} color={colors.textSecondary} />
+                <View style={styles.modalTitleRow}>
+                  <BookOpen size={18} color={themePrimaryColor} style={{ marginRight: 6 }} />
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>Xem lại câu sai</Text>
+                </View>
+                <TouchableOpacity onPress={onProceedAfterReview} style={styles.modalCloseBtn}>
+                  <X size={18} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView style={{ width: '100%', maxHeight: Dimensions.get('window').height * 0.6 }}>
-                {props.currentMatchWords
-                  .filter(w => Array.from(props.wrongPairs).some(pair => pair.startsWith(w.id + '-')))
-                  .map(word => (
-                    <View key={word.id} style={[styles.miniFlashcard, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                      <Text style={[styles.miniKanji, { color: colors.text }]}>{word.kanji}</Text>
-                      <View style={{ flex: 1, marginLeft: 16 }}>
-                        <Text style={[styles.miniHiragana, { color: colors.primary }]}>{word.hiragana}</Text>
-                        <Text style={[styles.miniMeaning, { color: colors.textSecondary }]}>{word.meaning}</Text>
+              <ScrollView 
+                style={styles.modalScroll} 
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+              >
+                {currentMatchWords
+                  .filter(w => Array.from(wrongPairs).some(pair => pair.startsWith(w.id + '-')))
+                  .map((word, idx) => (
+                    <View key={word.id} style={[styles.listItem, { borderColor: isDark ? '#1E293B' : '#F1F5F9', backgroundColor: colors.background }]}>
+                      <Text style={[styles.listIndex, { color: themePrimaryColor }]}>{idx + 1}.</Text>
+                      <View style={styles.listTextContainer}>
+                        <Text style={[styles.listText, { color: colors.text }]}>{word.kanji}</Text>
+                        <Text style={[styles.listSubText, { color: colors.textSecondary }]}>{word.hiragana} — {word.meaning}</Text>
                       </View>
                     </View>
                   ))
                 }
               </ScrollView>
 
-              <TouchableOpacity 
-                style={[styles.modalBtn, { backgroundColor: colors.primary }]}
-                onPress={props.onProceedAfterReview}
-              >
-                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}>ĐÃ HIỂU</Text>
-              </TouchableOpacity>
+              {/* Nút bấm Đã hiểu đổ khối 3D đồng bộ chân thực */}
+              <View style={styles.modalBtn3DWrapper}>
+                <View style={[styles.modalBtn3DBase, { backgroundColor: themeShadowColor }]} />
+                <TouchableOpacity 
+                  activeOpacity={0.9}
+                  style={[styles.modalBtn, { backgroundColor: themePrimaryColor }]}
+                  onPress={onProceedAfterReview}
+                >
+                  <Text style={styles.modalBtnText}>ĐÃ HIỂU</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>
@@ -235,7 +317,6 @@ export default function QuizUI(props: QuizUIProps) {
 const styles = StyleSheet.create({
   mainWrapper: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
   keyboardContainer: {
     flex: 1,
@@ -245,47 +326,43 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24, // Giảm padding một chút để thoáng giao diện
-    paddingTop: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 16, 
+    paddingTop: 16,
+    paddingBottom: 24,
   },
   footerWrapper: {
-    // Đảm bảo footer luôn ở dưới cùng và nổi bật
     borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    backgroundColor: '#FFFFFF',
+  },
+  typeLabelBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 16,
   },
   typeLabel: {
-    color: '#58A68E', // Màu xanh Shark Nihongo
     fontWeight: '900',
-    fontSize: 13,
-    letterSpacing: 1.2,
-    marginBottom: 12,
+    fontSize: 11,
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
-  },
-  kanjiContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 25,
-  },
-  kanjiText: {
-    fontWeight: '900',
-    color: '#1F1F1F',
-    letterSpacing: -1,
-    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
     justifyContent: 'flex-end',
   },
   modalContent: {
     width: '100%',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
     padding: 24,
     paddingBottom: Platform.OS === 'ios' ? 40 : 24,
     alignItems: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.08, shadowRadius: 16 },
+      android: { elevation: 10 },
+    }),
   },
   modalHeader: {
     flexDirection: 'row',
@@ -294,39 +371,74 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   modalTitle: {
     fontSize: 18,
     fontWeight: '900',
+    letterSpacing: -0.3
   },
-  miniFlashcard: {
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalScroll: {
+    width: '100%', 
+    maxHeight: Dimensions.get('window').height * 0.45,
+    marginBottom: 12,
+  },
+  listItem: {
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    padding: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  miniKanji: {
-    fontSize: 24,
+  listIndex: {
+    fontSize: 15,
     fontWeight: '900',
-    minWidth: 50,
-    textAlign: 'center',
+    width: 24,
   },
-  miniHiragana: {
+  listTextContainer: {
+    flex: 1,
+    marginLeft: 4,
+  },
+  listText: {
     fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
+    fontWeight: '900',
+    letterSpacing: -0.2
   },
-  miniMeaning: {
-    fontSize: 14,
+  listSubText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  modalBtn3DWrapper: {
+    width: '100%',
+    height: 52,
+    position: 'relative',
+    marginTop: 8,
+  },
+  modalBtn3DBase: {
+    position: 'absolute',
+    top: 4, left: 0, right: 0, bottom: -4,
+    borderRadius: 16,
   },
   modalBtn: {
-    width: '100%',
-    height: 56,
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
+  },
+  modalBtnText: {
+    color: '#FFF', 
+    fontWeight: '900', 
+    fontSize: 15,
+    letterSpacing: 0.5,
   }
 });

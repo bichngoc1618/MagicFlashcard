@@ -309,3 +309,135 @@ export const getUserStats = async (req, res) => {
     return res.status(500).json({ error: 'Không thể lấy thống kê người dùng.' });
   }
 };
+
+const createNotification = async (connection, { userId, type, title, body, metadata = {} }) => {
+  await connection.query(
+    'INSERT INTO notifications (user_id, type, title, body, metadata) VALUES (?, ?, ?, ?, ?)',
+    [userId, type, title, body, JSON.stringify(metadata)]
+  );
+};
+
+export const shareMaterial = async (req, res) => {
+  try {
+    const { senderId, recipientEmail, materialId } = req.body;
+    if (!senderId || !recipientEmail || !materialId) {
+      return res.status(400).json({ error: 'Thiếu senderId, recipientEmail hoặc materialId.' });
+    }
+
+    const normalizedEmail = recipientEmail.trim().toLowerCase();
+    const [senderRows] = await db.query('SELECT id, username FROM users WHERE id = ?', [Number(senderId)]);
+    const sender = senderRows[0];
+    if (!sender) return res.status(404).json({ error: 'Người gửi không tồn tại.' });
+
+    const [recipientRows] = await db.query('SELECT id, username FROM users WHERE email = ?', [normalizedEmail]);
+    const recipient = recipientRows[0];
+    if (!recipient) return res.status(404).json({ error: 'Email người nhận không tồn tại.' });
+    if (recipient.id === sender.id) return res.status(400).json({ error: 'Bạn không thể chia sẻ cho chính mình.' });
+
+    const [materialRows] = await db.query('SELECT id, title, description FROM study_materials WHERE id = ? AND user_id = ?', [Number(materialId), Number(senderId)]);
+    const material = materialRows[0];
+    if (!material) return res.status(404).json({ error: 'Không tìm thấy thẻ Material để chia sẻ.' });
+
+    const [flashcardRows] = await db.query('SELECT word, kanji, meaning, example FROM flashcards WHERE material_id = ?', [Number(materialId)]);
+    if (!flashcardRows.length) return res.status(400).json({ error: 'Thẻ Material không có dữ liệu để chia sẻ.' });
+
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [insertRes] = await connection.query(
+        'INSERT INTO study_materials (user_id, title, description, created_at) VALUES (?, ?, ?, NOW())',
+        [recipient.id, material.title, material.description || null]
+      );
+      const recipientMaterialId = insertRes.insertId;
+
+      const values = flashcardRows.map((card) => [
+        recipientMaterialId,
+        card.word,
+        card.kanji || null,
+        card.meaning || null,
+        card.example || null,
+      ]);
+
+      if (values.length > 0) {
+        await connection.query('INSERT INTO flashcards (material_id, word, kanji, meaning, example) VALUES ?', [values]);
+      }
+
+      await connection.query(
+        'INSERT INTO material_shares (sender_user_id, receiver_user_id, source_material_id, recipient_material_id) VALUES (?, ?, ?, ?)',
+        [sender.id, recipient.id, material.id, recipientMaterialId]
+      );
+
+      await createNotification(connection, {
+        userId: recipient.id,
+        type: 'share_received',
+        title: 'Bạn đã nhận được một thẻ Material mới',
+        body: `${sender.username} đã gửi cho bạn thẻ “${material.title}”.`,
+        metadata: { materialId: recipientMaterialId, sourceMaterialId: material.id, senderId: sender.id, senderName: sender.username },
+      });
+
+      await createNotification(connection, {
+        userId: sender.id,
+        type: 'share_sent',
+        title: 'Bạn đã chia sẻ thẻ',
+        body: `Bạn đã chia sẻ thẻ cho ${recipient.username}, chúc mừng bạn được +100xp.`,
+        metadata: { recipientId: recipient.id, recipientName: recipient.username, materialId: material.id },
+      });
+
+      await connection.query('UPDATE users SET total_xp = total_xp + 100 WHERE id = ?', [sender.id]);
+      const [updatedSenderRows] = await connection.query('SELECT total_xp FROM users WHERE id = ?', [sender.id]);
+      const updatedSender = updatedSenderRows[0] || { total_xp: 0 };
+
+      await connection.commit();
+
+      return res.json({ success: true, recipientMaterialId, senderXp: Number(updatedSender.total_xp || 0) });
+    } catch (error) {
+      await connection.rollback();
+      console.error('POST /materials/share transaction error', error);
+      return res.status(500).json({ error: 'Không thể chia sẻ thẻ Material.' });
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('POST /materials/share error', error);
+    return res.status(500).json({ error: 'Lỗi khi gửi yêu cầu chia sẻ.' });
+  }
+};
+
+export const getNotifications = async (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!userId) {
+      return res.status(400).json({ error: 'Thiếu userId.' });
+    }
+
+    const [rows] = await db.query(
+      'SELECT id, type, title, body, metadata, is_read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC',
+      [userId]
+    );
+
+    return res.json({ notifications: rows });
+  } catch (error) {
+    console.error('GET /notifications error', error);
+    return res.status(500).json({ error: 'Không thể lấy thông báo.' });
+  }
+};
+
+export const markNotificationsRead = async (req, res) => {
+  try {
+    const { userId, ids } = req.body;
+    if (!userId || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Thiếu userId hoặc ids.' });
+    }
+
+    await db.query(
+      'UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id IN (?)',
+      [Number(userId), ids]
+    );
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('POST /notifications/mark-read error', error);
+    return res.status(500).json({ error: 'Không thể cập nhật trạng thái thông báo.' });
+  }
+};

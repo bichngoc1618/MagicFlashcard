@@ -1,7 +1,8 @@
-﻿import React from 'react';
-import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+﻿import React, { useMemo } from 'react';
+import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View, Platform } from 'react-native';
 import { Bell, Camera, Mic, Moon, Sun, Search } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
+import { calculateLevelInfo } from '../utils/level';
 
 type AppHeaderSearchProps = {
   displayName: string;
@@ -9,8 +10,11 @@ type AppHeaderSearchProps = {
   searchText: string;
   onChangeSearchText: (text: string) => void;
   onSubmitSearch: () => void;
+  userXp?: number; // Nhận điểm kinh nghiệm từ file cha để gán vào hàm tính Level giống Profile
   greetingText?: string;
   placeholder?: string;
+  notificationCount?: number;
+  onNotificationPress?: () => void;
 };
 
 export default function AppHeaderSearch({
@@ -19,10 +23,17 @@ export default function AppHeaderSearch({
   searchText,
   onChangeSearchText,
   onSubmitSearch,
+  userXp = 0,
   greetingText = 'Xin chào 👋🏻',
   placeholder = 'Tìm kiếm từ vựng...',
+  notificationCount,
+  onNotificationPress,
 }: AppHeaderSearchProps) {
   const { theme, colors, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
+
+  // ✅ ĐỒNG BỘ 100% VỚI PROFILE: Sử dụng chính xác hàm trung tâm để tính toán cấp độ hiện tại
+  const levelInfo = useMemo(() => calculateLevelInfo(userXp), [userXp]);
 
   const dynamicStyles = {
     container: {
@@ -39,23 +50,43 @@ export default function AppHeaderSearch({
       flex: 1,
     },
     avatarCard: {
-      width: 56,
-      height: 56,
-      borderRadius: 22,
+      width: 64, // Đồng bộ kích thước khung Avatar 64x64 như Profile
+      height: 64,
+      borderRadius: 20,
       backgroundColor: colors.card,
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: isDark ? '#1E293B' : '#EEF2F1',
       justifyContent: 'center' as const,
       alignItems: 'center' as const,
-      shadowColor: '#000',
-      shadowOpacity: 0.04,
-      shadowOffset: { width: 0, height: 4 },
-      shadowRadius: 10,
-      elevation: 2,
+      position: 'relative' as const,
+      ...Platform.select({
+        ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.02, shadowRadius: 4 },
+        android: { elevation: 1 }
+      })
     },
     avatar: {
-      width: 40,
-      height: 40,
+      width: 48, // Đồng bộ ảnh linh vật bên trong đạt tỉ lệ 48 như Profile
+      height: 48,
+    },
+    // 🛠️ ĐỒNG BỘ STYLE HUY HIỆU CAPSULE LEVEL VỚI PROFILE 100%
+    levelBadgeMini: {
+      position: 'absolute' as const,
+      bottom: -6,
+      right: -10,
+      backgroundColor: '#FFD02C',
+      borderColor: colors.card,
+      borderWidth: 1.5,
+      paddingHorizontal: 5,
+      paddingVertical: 1.5,
+      borderRadius: 8,
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+      zIndex: 10,
+    },
+    levelBadgeText: {
+      fontSize: 8.5,
+      fontWeight: '900' as const,
+      color: '#000000',
     },
     profileText: {
       marginLeft: 16,
@@ -95,6 +126,23 @@ export default function AppHeaderSearch({
       shadowRadius: 10,
       elevation: 2,
     },
+    notificationBadge: {
+      position: 'absolute' as const,
+      top: 6,
+      right: 6,
+      minWidth: 18,
+      height: 18,
+      borderRadius: 9,
+      backgroundColor: '#EF4444',
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+      paddingHorizontal: 4,
+    },
+    notificationBadgeText: {
+      color: '#fff',
+      fontSize: 10,
+      fontWeight: '800' as const,
+    },
     searchCard: {
       marginTop: 24,
       flexDirection: 'row' as const,
@@ -119,7 +167,7 @@ export default function AppHeaderSearch({
       color: colors.text,
     },
     searchActions: {
-      flexDirection: 'row' as const,
+      flexDirection: 'row',
     },
     iconCircle: {
       width: 36,
@@ -137,6 +185,11 @@ export default function AppHeaderSearch({
         <View style={dynamicStyles.profileRow}>
           <View style={dynamicStyles.avatarCard}>
             <Image source={mascotSource} style={dynamicStyles.avatar} resizeMode="contain" />
+            
+            {/* Hiển thị chuẩn xác nhãn viên nang phẳng của Level nhận từ hàm trung tâm */}
+            <View style={dynamicStyles.levelBadgeMini}>
+              <Text style={dynamicStyles.levelBadgeText}>Lv.{levelInfo.level}</Text>
+            </View>
           </View>
           <View style={dynamicStyles.profileText}>
             <Text style={dynamicStyles.greetingText}>{greetingText}</Text>
@@ -156,8 +209,17 @@ export default function AppHeaderSearch({
               <Sun size={20} color={colors.primary} />
             )}
           </TouchableOpacity>
-          <TouchableOpacity style={dynamicStyles.iconButton} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={dynamicStyles.iconButton}
+            activeOpacity={0.8}
+            onPress={onNotificationPress}
+          >
             <Bell size={20} color={colors.primary} />
+            {typeof notificationCount === 'number' && notificationCount > 0 ? (
+              <View style={dynamicStyles.notificationBadge}>
+                <Text style={dynamicStyles.notificationBadgeText}>{notificationCount}</Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
       </View>
@@ -175,10 +237,10 @@ export default function AppHeaderSearch({
         />
         <View style={dynamicStyles.searchActions}>
           <TouchableOpacity style={dynamicStyles.iconCircle} activeOpacity={0.8}>
-            <Camera size={18} color={colors.textSecondary} />
+            {/* <Camera size={18} color={colors.textSecondary} /> */}
           </TouchableOpacity>
           <TouchableOpacity style={dynamicStyles.iconCircle} activeOpacity={0.8}>
-            <Mic size={18} color={colors.textSecondary} />
+            {/* <Mic size={18} color={colors.textSecondary} /> */}
           </TouchableOpacity>
         </View>
       </View>
@@ -201,23 +263,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   avatarCard: {
-    width: 56,
-    height: 56,
-    borderRadius: 22,
+    width: 64,
+    height: 64,
+    borderRadius: 20,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#EEF2F1',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
-    elevation: 2,
+    position: 'relative',
   },
   avatar: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
   },
   profileText: {
     marginLeft: 16,

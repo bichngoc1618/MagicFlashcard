@@ -70,9 +70,31 @@ export const getProfile = async (userId: number) => {
   return request(`/api/profile/${userId}`);
 };
 
+export const getProfileAnalytics = async (userId: number) => {
+  return request(`/api/profile/${userId}/analytics`);
+};
+
 export const getFlashcards = async (materialId: number, userId?: number) => {
   const query = userId ? `?userId=${userId}` : '';
   return request(`/api/flashcards/${materialId}${query}`);
+};
+
+export const shareMaterial = async (senderId: number, recipientEmail: string, materialId: number) => {
+  return request('/api/materials/share', {
+    method: 'POST',
+    body: JSON.stringify({ senderId, recipientEmail, materialId }),
+  });
+};
+
+export const getNotifications = async (userId: number) => {
+  return request(`/api/notifications/${userId}`);
+};
+
+export const markNotificationsRead = async (userId: number, ids: number[]) => {
+  return request('/api/notifications/mark-read', {
+    method: 'POST',
+    body: JSON.stringify({ userId, ids }),
+  });
 };
 
 export const createFlashcard = async (materialId: number, card: any) => {
@@ -221,12 +243,19 @@ export const speakAudio = async (formData: FormData) => {
 
 export const getChatHistory = async (userId?: number, all = false) => {
   if (all) {
-    return request('/api/chat/history');
+    return userId ? request(`/api/chat/history/${encodeURIComponent(userId)}`) : request('/api/chat-history');
   }
   if (userId) {
     return request(`/api/chat/history/${encodeURIComponent(userId)}`);
   }
   return request('/api/chat-history');
+};
+
+export const clearChatHistory = async (userId?: number) => {
+  return request('/api/chat-history/clear', {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
+  });
 };
 
 export const getStudyPath = async (userId: number, materialId: number) => {

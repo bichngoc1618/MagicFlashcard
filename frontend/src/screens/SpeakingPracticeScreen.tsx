@@ -10,14 +10,15 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Keyboard
+  Keyboard,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Speech from 'expo-speech';
 import { Audio } from 'expo-av';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useAuthContext } from '../context/AuthContext';
-import { getChatHistory, speakText, speakAudio } from '../api/api';
+import { getChatHistory, clearChatHistory, speakText, speakAudio } from '../api/api';
+import { speakTextToSpeech } from '../utils/tts';
 import BottomNavigation from '../components/BottomNavigation';
 import { useTheme } from '../context/ThemeContext';
 
@@ -33,10 +34,14 @@ export default function SpeakingPracticeScreen() {
   const [isListening, setIsListening] = useState(false);
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [speechRate, setSpeechRate] = useState<number>(0.85);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
-  const { colors } = useTheme();
+  const { colors, theme } = useTheme();
+  const isDark = theme === 'dark';
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -68,11 +73,43 @@ export default function SpeakingPracticeScreen() {
     loadAllHistory();
   }, [user?.id]);
 
-  const speakJapanese = (text: string) => {
+  const speakJapanese = async (text: string) => {
     if (!text) return;
     const japanesePart = text.split(/[|()]/)[0].trim();
-    Speech.stop();
-    Speech.speak(japanesePart, { language: 'ja-JP', pitch: 1.0, rate: 0.85 });
+    await speakTextToSpeech(japanesePart, {
+      language: 'ja-JP',
+      rate: speechRate,
+      pitch: 1.0,
+    });
+  };
+
+  const getSpeechSpeedLabel = () => {
+    if (speechRate <= 0.75) return 'Chậm';
+    if (speechRate >= 1.2) return 'Rất nhanh';
+    if (speechRate === 1.0) return 'Nhanh';
+    return 'Bình thường';
+  };
+
+  const clearConversation = async () => {
+    setSettingsOpen(false);
+    setShowClearConfirm(false);
+    setIsLoadingAI(true);
+    try {
+      if (user?.id) {
+        await clearChatHistory(user.id);
+      }
+      setMessages([{ id: Date.now(), text: 'Chào bạn! Nhấn giữ micro hoặc gõ tin nhắn để trò chuyện cùng サメ!', sender: 'ai' }]);
+    } catch (err) {
+      console.error('Không thể xóa lịch sử chat:', err);
+    } finally {
+      setIsLoadingAI(false);
+      scrollToBottom();
+    }
+  };
+
+  const confirmClearConversation = () => {
+    setSettingsOpen(false);
+    setShowClearConfirm(true);
   };
 
   const handleSendText = async () => {
@@ -86,10 +123,7 @@ export default function SpeakingPracticeScreen() {
 
     try {
       const data = await speakText(userMsg, user?.id);
-      const displayUserText = data.userCorrected || data.userOriginal || userMsg;
-      setMessages(prev => prev.map((msg) =>
-        msg.id === tempId ? { ...msg, text: displayUserText } : msg
-      ).concat([{ id: tempId + 1, text: data.aiReply, sender: 'ai' }]));
+      setMessages(prev => prev.concat([{ id: tempId + 1, text: data.aiReply, sender: 'ai' }]));
       speakJapanese(data.aiReply);
     } catch (err) {
       setMessages(prev => [...prev, { id: Date.now(), text: 'サメ gặp sự cố kết nối...', sender: 'ai' }]);
@@ -144,46 +178,93 @@ export default function SpeakingPracticeScreen() {
     } catch (err) { console.error(err); }
   };
 
+  // Hệ màu phẳng đậm lục bảo đồng bộ hóa
+  const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
         style={{ flex: 1 }}
       >
-        {/* HEADER */}
-        <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}> 
+        {/* HEADER ĐỒNG BỘ */}
+        <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: isDark ? '#1E293B' : '#F1F5F9' }]}> 
           <View>
             <Text style={[styles.screenTitle, { color: colors.text }]}>Luyện nói cùng サメ</Text>
             <View style={styles.statusBadge}>
-              <View style={[styles.onlineDot, { backgroundColor: colors.primary }]} />
-              <Text style={[styles.statusText, { color: colors.primary }]}>AI Online</Text>
+              <View style={[styles.onlineDot, { backgroundColor: themePrimaryColor }]} />
+              <Text style={[styles.statusText, { color: themePrimaryColor }]}>AI Online</Text>
             </View>
           </View>
-          <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
+          <TouchableOpacity onPress={() => setSettingsOpen(prev => !prev)} style={styles.settingsButton}>
+            <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
         </View>
 
-        {/* CHAT AREA */}
+        {/* MENU CÀI ĐẶT FLAT TỐI GIẢN */}
+        {settingsOpen && (
+          <View style={[styles.settingsMenu, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
+            <TouchableOpacity style={styles.settingsItem} onPress={() => setSpeechRate(0.5)}>
+              <Text style={[styles.settingsItemLabel, { color: colors.text }]}>Tốc độ rất chậm</Text>
+              <Text style={[styles.settingsItemValue, { color: speechRate === 0.5 ? themePrimaryColor : colors.textSecondary }]}>0.5x</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.settingsItem} onPress={() => setSpeechRate(0.75)}>
+              <Text style={[styles.settingsItemLabel, { color: colors.text }]}>Tốc độ chậm</Text>
+              <Text style={[styles.settingsItemValue, { color: speechRate === 0.75 ? themePrimaryColor : colors.textSecondary }]}>0.75x</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.settingsItem} onPress={() => setSpeechRate(1.0)}>
+              <Text style={[styles.settingsItemLabel, { color: colors.text }]}>Tốc độ bình thường</Text>
+              <Text style={[styles.settingsItemValue, { color: speechRate === 1.0 ? themePrimaryColor : colors.textSecondary }]}>1.0x</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.settingsItem} onPress={() => setSpeechRate(1.2)}>
+              <Text style={[styles.settingsItemLabel, { color: colors.text }]}>Tốc độ nhanh</Text>
+              <Text style={[styles.settingsItemValue, { color: speechRate === 1.2 ? themePrimaryColor : colors.textSecondary }]}>1.2x</Text>
+            </TouchableOpacity>
+            <View style={[styles.settingsDivider, { backgroundColor: isDark ? '#1E293B' : '#E2E8F0' }]} />
+            <TouchableOpacity style={styles.settingsItem} onPress={confirmClearConversation}>
+              <Text style={[styles.settingsItemLabel, { color: colors.danger || '#FF4B4B' }]}>Xóa lịch sử chat</Text>
+            </TouchableOpacity>
+            <Text style={[styles.settingsFooter, { color: colors.textSecondary }]}>Tốc độ hiện tại: {getSpeechSpeedLabel()}</Text>
+          </View>
+        )}
+
+        {/* MODAL XÁC NHẬN XÓA LỊCH SỬ CHAT ĐỒNG BỘ POPUP HOME */}
+        <Modal visible={showClearConfirm} transparent animationType="fade" onRequestClose={() => setShowClearConfirm(false)}>
+          <View style={styles.confirmOverlay}>
+            <View style={[styles.confirmBox, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}> 
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>Bạn có chắc chắn?</Text>
+              <Text style={[styles.confirmMessage, { color: colors.textSecondary }]}>Hành động này sẽ xóa toàn bộ lịch sử chat của bạn.</Text>
+              <View style={styles.confirmActions}>
+                <TouchableOpacity style={[styles.confirmButton, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]} onPress={() => setShowClearConfirm(false)}>
+                  <Text style={{ color: colors.textSecondary, fontWeight: '700' }}>HỦY</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.confirmButton, { backgroundColor: colors.danger || '#FF4B4B' }]} onPress={clearConversation}>
+                  <Text style={{ color: '#FFF', fontWeight: '700' }}>XÁC NHẬN</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* KHÔNG GIAN CUỘN TIN NHẮN */}
         <ScrollView 
           style={[styles.chatContainer, { backgroundColor: colors.background }]} 
           ref={scrollViewRef}
           onContentSizeChange={scrollToBottom}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingVertical: 15 }}
+          contentContainerStyle={{ paddingVertical: 16 }}
         >
           {messages.map((msg) => (
             <View key={msg.id} style={[styles.messageWrapper, msg.sender === 'user' ? styles.userRow : styles.aiRow]}>
               {msg.sender === 'ai' && (
-                <Image source={require('../../assets/speak.png')} style={styles.miniMascot} />
+                <Image source={require('../../assets/speak.png')} style={[styles.miniMascot, { backgroundColor: isDark ? 'rgba(59, 122, 102, 0.15)' : '#E9FBF5' }]} />
               )}
               <TouchableOpacity 
-                activeOpacity={0.8} 
+                activeOpacity={0.9} 
                 style={[
                   styles.chatBox,
-                  msg.sender === 'user' ? styles.userBox : styles.aiBox,
-                  {
-                    backgroundColor: msg.sender === 'user' ? colors.primary : colors.card,
-                    borderColor: colors.border,
-                  }
+                  msg.sender === 'user' ? [styles.userBox, { backgroundColor: themePrimaryColor }] : [styles.aiBox, { backgroundColor: colors.card }],
+                  { borderColor: isDark ? '#1E293B' : '#F1F5F9' }
                 ]}
                 onPress={() => speakJapanese(msg.text)}
               >
@@ -196,37 +277,37 @@ export default function SpeakingPracticeScreen() {
           
           {isLoadingAI && (
             <View style={styles.aiRow}>
-              <Image source={require('../../assets/speak.png')} style={styles.miniMascot} />
-              <View style={[styles.chatBox, styles.aiBox, styles.loadingBox, { backgroundColor: colors.card, borderColor: colors.border }]}> 
-                <ActivityIndicator size="small" color={colors.primary} />
+              <Image source={require('../../assets/speak.png')} style={[styles.miniMascot, { backgroundColor: isDark ? 'rgba(59, 122, 102, 0.15)' : '#E9FBF5' }]} />
+              <View style={[styles.chatBox, styles.aiBox, styles.loadingBox, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}> 
+                <ActivityIndicator size="small" color={themePrimaryColor} />
               </View>
             </View>
           )}
         </ScrollView>
 
-        {/* INPUT AREA */}
-        <View style={[styles.inputArea, { backgroundColor: colors.card, borderTopColor: colors.border }]}> 
-          <View style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
+        {/* INPUT KHU VỰC NHẬP LIỆU VÀ MICRO CAPSULE CHUẨN FLAT */}
+        <View style={[styles.inputArea, { backgroundColor: colors.card, borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}> 
+          <View style={[styles.inputContainer, { backgroundColor: colors.background, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}> 
             <TextInput 
               style={[styles.textInput, { color: colors.text }]}
               placeholder="Nhập tin nhắn..."
-              placeholderTextColor={colors.placeholder}
+              placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
               value={inputText}
               onChangeText={setInputText}
               multiline={false}
             />
             
             {inputText.length > 0 ? (
-              <TouchableOpacity onPress={handleSendText} style={[styles.actionBtn, { backgroundColor: colors.primary }]}> 
-                <Ionicons name="send" size={18} color="#fff" />
+              <TouchableOpacity onPress={handleSendText} style={[styles.actionBtn, { backgroundColor: themePrimaryColor }]}> 
+                <Ionicons name="send" size={16} color="#fff" />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
                 onPressIn={handleStartListening}
                 onPressOut={handleStopListening}
-                style={[styles.actionBtn, { backgroundColor: isListening ? colors.danger : colors.primary }]}
+                style={[styles.actionBtn, { backgroundColor: isListening ? (colors.danger || '#FF4B4B') : themePrimaryColor }]}
               >
-                <FontAwesome5 name={isListening ? "stop" : "microphone"} size={16} color="white" />
+                <FontAwesome5 name={isListening ? "stop" : "microphone"} size={14} color="white" />
               </TouchableOpacity>
             )}
           </View>
@@ -235,7 +316,7 @@ export default function SpeakingPracticeScreen() {
           </Text>
         </View>
 
-        {/* CỰC KỲ QUAN TRỌNG: View giữ chỗ này có chiều cao bằng BottomNavigation để không bị che */}
+        {/* Giữ khoảng cách cố định dưới chân tránh BottomNavigation đè */}
         <View style={{ height: Platform.OS === 'ios' ? 85 : 75 }} />
       </KeyboardAvoidingView>
 
@@ -244,42 +325,38 @@ export default function SpeakingPracticeScreen() {
   );
 }
 
+/* ================= STYLES CHUẨN FLAT ĐỒNG BỘ HỆ THỐNG ================= */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFB',
   },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
+    paddingVertical: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#EDF2F1',
   },
   screenTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#173C35',
+    fontSize: 19,
+    fontWeight: '900',
+    letterSpacing: -0.3,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 2,
+    marginTop: 4,
   },
   onlineDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#2E7B5F',
     marginRight: 6,
   },
   statusText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#2E7B5F',
+    fontSize: 11,
+    fontWeight: '800',
   },
   chatContainer: {
     flex: 1,
@@ -297,86 +374,160 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   miniMascot: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    marginRight: 8,
-    backgroundColor: '#DDECE7',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    marginRight: 10,
   },
   chatBox: {
-    maxWidth: '80%',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    maxWidth: '75%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.02, shadowRadius: 4 },
+      android: { elevation: 1 },
+    }),
   },
   aiBox: {
-    backgroundColor: '#fff',
-    borderBottomLeftRadius: 4,
+    borderBottomLeftRadius: 20,
   },
   userBox: {
-    backgroundColor: '#2E7B5F',
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: 20,
   },
   loadingBox: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
   },
   chatText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  aiText: {
-    color: '#2C3E50',
-  },
-  userText: {
-    color: '#fff',
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '500',
   },
   inputArea: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 8,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 20,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.03, shadowRadius: 10 },
+      android: { elevation: 10 },
+    }),
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F1F4F4',
-    borderRadius: 25,
-    paddingHorizontal: 12,
+    borderRadius: 24,
+    paddingHorizontal: 14,
     paddingVertical: 4,
+    borderWidth: 1,
   },
   textInput: {
     flex: 1,
-    height: 40,
-    fontSize: 14,
-    color: '#173C35',
+    height: 42,
+    fontSize: 15,
+    fontWeight: '500',
   },
   actionBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#2E7B5F',
     marginLeft: 8,
   },
   hintText: {
     textAlign: 'center',
-    fontSize: 10,
-    color: '#94A3B8',
-    marginTop: 6,
-    fontWeight: '500',
+    fontSize: 11,
+    marginTop: 8,
+    fontWeight: '700',
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsMenu: {
+    position: 'absolute',
+    right: 20,
+    top: Platform.OS === 'ios' ? 90 : 80,
+    width: 240,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 8,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 16 },
+      android: { elevation: 8 },
+    }),
+    zIndex: 50,
+  },
+  settingsItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  settingsItemLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  settingsItemValue: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  settingsDivider: {
+    height: 1,
+    marginVertical: 6,
+  },
+  settingsFooter: {
+    fontSize: 12,
+    paddingHorizontal: 18,
+    paddingBottom: 10,
+    fontWeight: '600',
+  },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmBox: {
+    width: '100%',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.15, shadowRadius: 20 },
+      android: { elevation: 6 },
+    }),
+  },
+  confirmTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    marginBottom: 8,
+    letterSpacing: -0.3,
+  },
+  confirmMessage: {
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  confirmButton: {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

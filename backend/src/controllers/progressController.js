@@ -20,7 +20,14 @@ const getTotalBatches = (totalCards) => {
 
 const formatDate = (value) => {
   const date = new Date(value);
-  return date.toISOString().slice(0, 10);
+  const timezoneOffsetMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - timezoneOffsetMs).toISOString().slice(0, 10);
+};
+
+const calculateMinutes = (startTime, endTime) => {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  return Math.max(0, Math.round((end - start) / 60000));
 };
 
 const calculateJourneyNodeProgress = (totalCards, currentCardIndex = 0) => {
@@ -29,6 +36,81 @@ const calculateJourneyNodeProgress = (totalCards, currentCardIndex = 0) => {
   const completedNodes = Math.min(Math.max(Number(currentCardIndex) || 0, 0), totalNodes);
   const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
   return { totalBatches, totalNodes, completedNodes, progressPercentage };
+};
+
+const getActivityDatesForUser = async (userId) => {
+  const [rows] = await db.query(
+    `SELECT DISTINCT DATE(activity_date) AS activity_date
+     FROM (
+       SELECT date AS activity_date FROM user_study_sessions WHERE user_id = ?
+       UNION
+       SELECT DATE(completed_at) AS activity_date FROM quiz_sessions WHERE user_id = ?
+     ) AS all_activity
+     WHERE activity_date IS NOT NULL
+     ORDER BY activity_date DESC`,
+    [userId, userId]
+  );
+  return (rows || []).map((row) => formatDate(row.activity_date));
+};
+
+const calculateStreakFromDates = (dates) => {
+  if (!Array.isArray(dates) || dates.length === 0) return 0;
+  let streak = 0;
+  let expectedDate = dates[0];
+
+  for (const date of dates) {
+    if (date !== expectedDate) break;
+    streak += 1;
+    const nextDate = new Date(expectedDate);
+    nextDate.setDate(nextDate.getDate() - 1);
+    expectedDate = formatDate(nextDate);
+  }
+
+  return streak;
+};
+
+const ensureStudySessionForToday = async (userId, sessionId = null) => {
+  const today = formatDate(new Date());
+  if (sessionId) {
+    const [rows] = await db.query('SELECT id, start_time FROM user_study_sessions WHERE id = ?', [sessionId]);
+    if (rows.length > 0) {
+      const startTime = rows[0].start_time;
+      const endTime = new Date();
+      const duration = calculateMinutes(startTime, endTime);
+      await db.query('UPDATE user_study_sessions SET end_time = ?, duration = ? WHERE id = ?', [endTime, duration, sessionId]);
+      return sessionId;
+    }
+  }
+
+  const [existingRows] = await db.query(
+    'SELECT id, start_time FROM user_study_sessions WHERE user_id = ? AND date = ? ORDER BY id DESC LIMIT 1',
+    [userId, today]
+  );
+
+  if (existingRows.length > 0) {
+    const startTime = existingRows[0].start_time;
+    const endTime = new Date();
+    const duration = calculateMinutes(startTime, endTime);
+    await db.query('UPDATE user_study_sessions SET end_time = ?, duration = ? WHERE id = ?', [endTime, duration, existingRows[0].id]);
+    return existingRows[0].id;
+  }
+
+  const [result] = await db.query(
+    'INSERT INTO user_study_sessions (user_id, start_time, end_time, duration, date) VALUES (?, NOW(), NOW(), 0, CURDATE())',
+    [userId]
+  );
+  return result.insertId;
+};
+
+const updateUserStreakForToday = async (userId) => {
+  const activityDates = await getActivityDatesForUser(userId);
+  const newStreak = calculateStreakFromDates(activityDates);
+  const latestDate = activityDates[0] || formatDate(new Date());
+  await db.query(
+    'UPDATE users SET streak_count = ?, last_node_completed_date = ?, last_study_date = ? WHERE id = ?',
+    [newStreak, latestDate, latestDate, userId]
+  );
+  return newStreak;
 };
 
 const encodeQuestionIndex = (quizStepType, questionIndex) => {
@@ -227,6 +309,11 @@ export const getProfileOverview = async (req, res) => {
 
     return res.json({
       user,
+      username: user.username,
+      email: user.email,
+      total_xp: Number(user.total_xp ?? 0),
+      streak_count: Number(user.streak_count ?? 0),
+      total_time: Number(user.total_time ?? 0),
       progress: progressRows,
       recentQuizzes,
     });
@@ -282,6 +369,91 @@ export const getProfileAnalytics = async (req, res) => {
     );
     const averageAccuracy = Number(accuracyRows[0]?.average_accuracy ?? 0);
 
+    const [answersRows] = await db.query(
+      `SELECT COALESCE(SUM(total_questions), 0) AS total_answers
+       FROM quiz_sessions
+       WHERE user_id = ?`,
+      [userId]
+    );
+    const totalAnswers = Number(answersRows[0]?.total_answers ?? 0);
+
+    const [totalCardsRows] = await db.query(
+      `SELECT COUNT(f.id) AS total_cards
+       FROM study_materials sm
+       LEFT JOIN flashcards f ON sm.id = f.material_id
+       WHERE sm.user_id = ?`,
+      [userId]
+    );
+    const totalCards = Number(totalCardsRows[0]?.total_cards ?? 0);
+
+    const [inProgressRows] = await db.query(
+      `SELECT COUNT(*) AS in_progress_count
+       FROM user_flashcard_progress
+       WHERE user_id = ?
+         AND is_learned = 0`,
+      [userId]
+    );
+    const inProgressCount = Number(inProgressRows[0]?.in_progress_count ?? 0);
+    const notLearnedCount = Math.max(totalCards - learnedVocabularyCount - inProgressCount, 0);
+
+    const [weeklyRows] = await db.query(
+      `SELECT activity_date AS date, COUNT(*) AS count
+       FROM (
+         SELECT DATE(date) AS activity_date FROM user_study_sessions WHERE user_id = ?
+         UNION ALL
+         SELECT DATE(completed_at) AS activity_date FROM quiz_sessions WHERE user_id = ? AND completed_at IS NOT NULL
+       ) AS activity_union
+       WHERE activity_date >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+       GROUP BY activity_date
+       ORDER BY activity_date ASC`,
+      [userId, userId]
+    );
+
+    const weeklyActivityMap = {};
+    (weeklyRows || []).forEach((row) => {
+      const dateString = row.date ? new Date(row.date).toISOString().slice(0, 10) : null;
+      if (dateString) {
+        weeklyActivityMap[dateString] = Number(row.count ?? 0);
+      }
+    });
+
+    const weeklyActivity = [];
+    for (let i = 6; i >= 0; i -= 1) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const key = date.toISOString().slice(0, 10);
+      weeklyActivity.push(Boolean(weeklyActivityMap[key]));
+    }
+
+    // Tính streak dựa trên những ngày liên tục có hoạt động, không chỉ 7 ngày gần nhất.
+    const [activityRows] = await db.query(
+      `SELECT DISTINCT activity_date AS date
+       FROM (
+         SELECT DATE(date) AS activity_date FROM user_study_sessions WHERE user_id = ?
+         UNION
+         SELECT DATE(completed_at) AS activity_date FROM quiz_sessions WHERE user_id = ? AND completed_at IS NOT NULL
+       ) AS all_activity
+       WHERE activity_date IS NOT NULL
+       ORDER BY activity_date DESC`,
+      [userId, userId]
+    );
+
+    const activityDates = (activityRows || []).map((row) => row.date ? formatDate(row.date) : null).filter(Boolean);
+    let streakDays = 0;
+    let expectedDate = activityDates.length > 0 ? new Date(activityDates[0]) : null;
+
+    if (expectedDate) {
+      expectedDate = new Date(expectedDate.toISOString().slice(0, 10));
+      for (const dateString of activityDates) {
+        if (dateString === expectedDate.toISOString().slice(0, 10)) {
+          streakDays += 1;
+          expectedDate.setDate(expectedDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+
     const [quizRows] = await db.query(
       `SELECT DATE(completed_at) AS date, ROUND(AVG(score), 2) AS average_score
        FROM quiz_sessions
@@ -294,25 +466,28 @@ export const getProfileAnalytics = async (req, res) => {
 
     const quizTrend = (quizRows || [])
       .map((row) => ({
-        // Ensure date is ISO YYYY-MM-DD so frontend can parse reliably
-        date: row.date ? (new Date(row.date)).toISOString().slice(0, 10) : null,
+        date: row.date ? formatDate(row.date) : null,
         score: Number(row.average_score ?? 0),
       }))
       .filter((item) => item.date !== null)
       .reverse();
 
     const [heatmapRows] = await db.query(
-      `SELECT DATE(date) AS date, COUNT(*) AS count
-       FROM user_study_sessions
-       WHERE user_id = ? AND date >= DATE_SUB(CURDATE(), INTERVAL 27 DAY)
-       GROUP BY DATE(date)
-       ORDER BY DATE(date) ASC`,
-      [userId]
+      `SELECT activity_date AS date, COUNT(*) AS count
+       FROM (
+         SELECT DATE(date) AS activity_date FROM user_study_sessions WHERE user_id = ?
+         UNION ALL
+         SELECT DATE(completed_at) AS activity_date FROM quiz_sessions WHERE user_id = ? AND completed_at IS NOT NULL
+       ) AS activity_union
+       WHERE activity_date >= DATE_SUB(CURDATE(), INTERVAL 27 DAY)
+       GROUP BY activity_date
+       ORDER BY activity_date ASC`,
+      [userId, userId]
     );
 
     const heatmap = {};
     (heatmapRows || []).forEach((row) => {
-      const dateString = row.date ? (new Date(row.date)).toISOString().slice(0, 10) : null;
+      const dateString = row.date ? formatDate(row.date) : null;
       if (dateString) {
         heatmap[dateString] = Number(row.count ?? 0);
       }
@@ -322,9 +497,21 @@ export const getProfileAnalytics = async (req, res) => {
       username: user.username,
       email: user.email,
       total_xp: Number(user.total_xp ?? 0),
+      totalXP: Number(user.total_xp ?? 0),
+      streakDays,
+      totalAnswers: totalAnswers,
       learned_vocabulary_count: learnedVocabularyCount,
+      learnedVocabularyCount: learnedVocabularyCount,
       total_study_duration: totalStudyDuration,
+      totalStudyDuration: totalStudyDuration,
       average_accuracy: averageAccuracy,
+      averageAccuracy: averageAccuracy,
+      vocabStats: {
+        mastered: learnedVocabularyCount,
+        learning: inProgressCount,
+        notLearned: notLearnedCount,
+      },
+      weeklyActivity,
       quizTrend,
       heatmap,
     });
@@ -515,6 +702,8 @@ export const completeFlashcardBatch = async (req, res) => {
     const xpReward = cardIds.length * 5;
     await db.query('UPDATE users SET total_xp = total_xp + ? WHERE id = ?', [xpReward, userId]);
     const currentCardIndex = await bumpLearningPathIndex(userId, materialId);
+    await ensureStudySessionForToday(userId);
+    await updateUserStreakForToday(userId);
 
     return res.json({ success: true, currentCardIndex, learnedCards: cardIds.length });
   } catch (error) {
@@ -557,6 +746,8 @@ export const completeQuizNode = async (req, res) => {
     }
 
     const currentCardIndex = await bumpLearningPathIndex(userId, materialId);
+    await ensureStudySessionForToday(userId);
+    await updateUserStreakForToday(userId);
     return res.json({ success: true, currentCardIndex, score });
   } catch (error) {
     console.error('POST /quiz/complete-node error', error);
@@ -651,6 +842,8 @@ export const completeQuizSession = async (req, res) => {
     const xpReward = Math.round(correctAnswers * 10);
     await db.query('UPDATE users SET total_xp = total_xp + ? WHERE id = ?', [xpReward, userId]);
     const currentCardIndex = await bumpLearningPathIndex(userId, materialId);
+    await ensureStudySessionForToday(userId);
+    await updateUserStreakForToday(userId);
 
     return res.json({
       success: true,
@@ -672,17 +865,44 @@ export const getHomeWrongWords = async (req, res) => {
       return res.status(400).json({ error: 'Thiếu userId.' });
     }
 
-    // Lấy 5 từ sai gần nhất
-    const [rows] = await db.query(`
-      SELECT f.kanji, f.meaning
-      FROM quiz_question_progress qqp
-      JOIN flashcards f ON qqp.material_id = f.material_id AND qqp.question_index = f.id
-      WHERE qqp.user_id = ? AND qqp.is_correct = 0
-      ORDER BY qqp.answered_at DESC
-      LIMIT 5
-    `, [userId]);
+    // Lấy 5 từ sai trong quiz gần nhất — tìm completed_at mới nhất rồi lấy câu trả lời sai trong khoảng thời gian gần đó
+    const [[lastRow]] = await db.query(
+      `SELECT MAX(completed_at) AS last_completed_at FROM quiz_sessions WHERE user_id = ? AND completed_at IS NOT NULL`,
+      [userId]
+    );
 
-    const wrongWords = rows.map(row => ({ kanji: row.kanji || '', meaning: row.meaning }));
+    let rows = [];
+    if (lastRow && lastRow.last_completed_at) {
+      // Chọn những câu trả lời có timestamp trong vòng 2 giờ trước completed_at
+      const [recentRows] = await db.query(
+        `SELECT f.kanji, f.meaning
+         FROM quiz_question_progress qqp
+         JOIN flashcards f ON qqp.material_id = f.material_id AND qqp.question_index = f.id
+         WHERE qqp.user_id = ? AND qqp.is_correct = 0
+           AND qqp.answered_at <= ?
+           AND qqp.answered_at >= DATE_SUB(?, INTERVAL 2 HOUR)
+         ORDER BY qqp.answered_at DESC
+         LIMIT 5`,
+        [userId, lastRow.last_completed_at, lastRow.last_completed_at]
+      );
+
+      rows = recentRows;
+    }
+
+    // Fallback: nếu không có quiz gần nhất hoặc không tìm thấy câu sai, dùng 5 câu sai gần nhất theo thời gian
+    if (!rows || rows.length === 0) {
+      const [fallbackRows] = await db.query(`
+        SELECT f.kanji, f.meaning
+        FROM quiz_question_progress qqp
+        JOIN flashcards f ON qqp.material_id = f.material_id AND qqp.question_index = f.id
+        WHERE qqp.user_id = ? AND qqp.is_correct = 0
+        ORDER BY qqp.answered_at DESC
+        LIMIT 5
+      `, [userId]);
+      rows = fallbackRows;
+    }
+
+    const wrongWords = (rows || []).map(row => ({ kanji: row.kanji || '', meaning: row.meaning }));
 
     return res.json({ wrongWords });
   } catch (error) {

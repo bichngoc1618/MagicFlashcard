@@ -104,13 +104,12 @@ router.post("/text", async (req, res) => {
         if (!text) return res.json({ error: "No text" });
         const numericUserId = userId ? Number(userId) : null;
 
-        const correctedText = await correctUserSpeech(text);
-        const aiReply = await getSameReply(correctedText);
-        await saveChatHistory(numericUserId, correctedText || text, aiReply);
+        const aiReply = await getSameReply(text);
+        await saveChatHistory(numericUserId, text, aiReply);
 
         return res.json({
             userOriginal: text,
-            userCorrected: correctedText,
+            userCorrected: text,
             aiReply: aiReply
         });
     } catch (err) { res.status(500).json({ error: "Server error" }); }
@@ -130,6 +129,24 @@ const fetchChatHistory = async (userId) => {
     const [rows] = await db.query(query, params);
     return rows;
 };
+
+const clearUserChatHistory = async (req, res) => {
+    try {
+        const userId = req.body.userId ? Number(req.body.userId) : null;
+        if (!userId) {
+            return res.json({ success: true });
+        }
+
+        await db.query('DELETE FROM chat_history WHERE user_id = ?', [userId]);
+        return res.json({ success: true });
+    } catch (err) {
+        console.error('Xóa chat history thất bại:', err);
+        return res.status(500).json({ error: "Could not clear chat history" });
+    }
+};
+
+router.post("/chat/history/clear", clearUserChatHistory);
+router.post("/chat-history/clear", clearUserChatHistory);
 
 router.get("/chat-history", async (req, res) => {
     try {

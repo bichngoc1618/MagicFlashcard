@@ -14,6 +14,7 @@ import FlashcardScreen from '../screens/FlashcardScreen';
 import QuizScreen from '../screens/QuizScreen';
 import SpeakingPracticeScreen from '../screens/SpeakingPracticeScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import NotificationScreen from '../screens/NotificationScreen';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -23,6 +24,7 @@ export type RootStackParamList = {
   Study: undefined;
   SpeakingPractice: undefined;
   Profile: undefined;
+  Notifications: undefined;
 
   // 🦈 Màn hình Lộ trình: Dùng materialId làm khóa chính
   StudyJourney: { 
@@ -95,6 +97,7 @@ const AppNavigator = () => {
       <Stack.Screen name="Flashcard" component={FlashcardScreen} />
       <Stack.Screen name="Quiz" component={QuizScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="Notifications" component={NotificationScreen} />
       <Stack.Screen name="Dictionary" component={DictionaryScreen} />
       <Stack.Screen name="SpeakingPractice" component={SpeakingPracticeScreen} />
     </Stack.Navigator>
