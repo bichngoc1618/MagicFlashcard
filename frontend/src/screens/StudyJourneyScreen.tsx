@@ -783,7 +783,11 @@ export default function StudyJourneyScreen({
                 : SCREEN_HEIGHT,
             }}
           >
-          <Svg style={StyleSheet.absoluteFill} width={SCREEN_WIDTH}>
+          <Svg 
+            style={StyleSheet.absoluteFill} 
+            width={SCREEN_WIDTH} 
+            height={journeyData.journeyNodes?.length ? journeyData.journeyNodes[journeyData.journeyNodes.length - 1].top + 400 : SCREEN_HEIGHT}
+          >
             {activePathD && (
               <Path d={activePathD} stroke={isDark ? '#458571' : '#417D6B'} strokeWidth={6} fill="none" strokeDasharray="8,8" strokeLinecap="round" />
             )}

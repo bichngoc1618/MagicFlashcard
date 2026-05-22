@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "same",
+    "name": "Same kun",
     "slug": "same",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -35,7 +35,11 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "name": "Same kun",
+      "shortName": "Same",
+      "lang": "vi",
+      "favicon": "./assets/favicon.png",
+      "appleTouchIcon": "./assets/sharkMagic.png"
     },
     "runtimeVersion": {
       "policy": "appVersion"
