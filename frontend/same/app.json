@@ -21,7 +21,11 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/sharkMagic.png",
+      "name": "Same kun",
+      "shortName": "Same",
+      "lang": "vi",
+      "appleTouchIcon": "./assets/sharkMagic.png"
     },
     "plugins": [
       "expo-router",
