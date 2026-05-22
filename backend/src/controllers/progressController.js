@@ -10,12 +10,101 @@ const QUIZ_STEP_OFFSETS = {
   WRITE_HIRA: 40,
 };
 
-const getTotalBatches = (totalCards) => {
-  if (!totalCards || totalCards <= 0) return 0;
-  const numFullChunks = Math.floor(totalCards / CHUNK_SIZE);
-  const remainder = totalCards % CHUNK_SIZE;
-  if (numFullChunks === 0) return 1;
-  return remainder >= 6 ? numFullChunks + 1 : numFullChunks;
+const getSeparatedTotalBatches = (totalCards, learnedCards) => {
+  const learnedCount = Number(learnedCards) || 0;
+  const unlearnedCount = Math.max(0, (Number(totalCards) || 0) - learnedCount);
+  
+  const getHelperBatches = (count) => {
+    if (!count || count <= 0) return 0;
+    const numFullChunks = Math.floor(count / CHUNK_SIZE);
+    const remainder = count % CHUNK_SIZE;
+    if (numFullChunks === 0) return 1;
+    return remainder >= 6 ? numFullChunks + 1 : numFullChunks;
+  };
+  
+  return getHelperBatches(learnedCount) + getHelperBatches(unlearnedCount);
+};
+
+const chunkVocabularyHelper = (vocabList) => {
+  const N = vocabList.length;
+  if (N === 0) return [];
+
+  const numFullChunks = Math.floor(N / CHUNK_SIZE);
+  const R = N % CHUNK_SIZE;
+
+  if (numFullChunks === 0) {
+    return [vocabList];
+  }
+
+  const chunks = [];
+
+  if (R >= 6) {
+    for (let i = 0; i < numFullChunks; i++) {
+      chunks.push(vocabList.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE));
+    }
+    chunks.push(vocabList.slice(numFullChunks * CHUNK_SIZE));
+  } else if (R > 0) {
+    const chunkSizes = new Array(numFullChunks).fill(CHUNK_SIZE);
+    let remaining = R;
+    let idx = numFullChunks - 1;
+
+    while (remaining > 0) {
+      chunkSizes[idx]++;
+      remaining--;
+      idx--;
+      if (idx < 0) idx = numFullChunks - 1;
+    }
+
+    let start = 0;
+    for (let i = 0; i < numFullChunks; i++) {
+      const size = chunkSizes[i];
+      chunks.push(vocabList.slice(start, start + size));
+      start += size;
+    }
+  } else {
+    for (let i = 0; i < numFullChunks; i++) {
+      chunks.push(vocabList.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE));
+    }
+  }
+
+  return chunks;
+};
+
+const chunkVocabulary = (vocabList) => {
+  const learned = vocabList.filter((item) => item && item.is_learned === 1);
+  const unlearned = vocabList.filter((item) => !item || item.is_learned !== 1);
+
+  const chunksLearned = chunkVocabularyHelper(learned);
+  const chunksUnlearned = chunkVocabularyHelper(unlearned);
+
+  return [...chunksLearned, ...chunksUnlearned];
+};
+
+const getSortedAndChunkedFlashcards = async (userId, materialId) => {
+  const [flashcards] = await db.query(
+    `SELECT
+       f.id,
+       f.word,
+       f.kanji,
+       f.meaning,
+       f.example,
+       COALESCE(ufp.is_learned, 0) AS is_learned
+     FROM flashcards f
+     LEFT JOIN user_flashcard_progress ufp
+       ON ufp.flashcard_id = f.id AND ufp.user_id = ?
+     WHERE f.material_id = ?
+     ORDER BY COALESCE(ufp.is_learned, 0) DESC, f.id ASC`,
+    [userId, materialId]
+  );
+  return chunkVocabulary(flashcards);
+};
+
+const calculateJourneyNodeProgress = (totalCards, learnedCards, currentCardIndex = 0) => {
+  const totalBatches = getSeparatedTotalBatches(totalCards, learnedCards);
+  const totalNodes = totalBatches > 0 ? totalBatches * 5 + Math.floor((totalBatches - 1) / 2) + 1 : 0;
+  const completedNodes = Math.min(Math.max(Number(currentCardIndex) || 0, 0), totalNodes);
+  const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
+  return { totalBatches, totalNodes, completedNodes, progressPercentage };
 };
 
 const formatDate = (value) => {
@@ -28,14 +117,6 @@ const calculateMinutes = (startTime, endTime) => {
   const start = new Date(startTime);
   const end = new Date(endTime);
   return Math.max(0, Math.round((end - start) / 60000));
-};
-
-const calculateJourneyNodeProgress = (totalCards, currentCardIndex = 0) => {
-  const totalBatches = getTotalBatches(totalCards);
-  const totalNodes = totalBatches > 0 ? totalBatches * 5 + Math.floor((totalBatches - 1) / 2) + 1 : 0;
-  const completedNodes = Math.min(Math.max(Number(currentCardIndex) || 0, 0), totalNodes);
-  const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
-  return { totalBatches, totalNodes, completedNodes, progressPercentage };
 };
 
 const getActivityDatesForUser = async (userId) => {
@@ -200,12 +281,10 @@ export const getStudyPath = async (req, res) => {
       return res.status(404).json({ error: 'Tài liệu không tồn tại.' });
     }
 
-    const [cardsRows] = await db.query(
-      'SELECT id FROM flashcards WHERE material_id = ? ORDER BY id ASC',
+    const [[{ count: totalCards }]] = await db.query(
+      'SELECT COUNT(*) AS count FROM flashcards WHERE material_id = ?',
       [materialId]
     );
-    const totalCards = cardsRows.length;
-    const totalBatches = getTotalBatches(totalCards);
 
     const [progressRows] = await db.query(
       `SELECT flashcard_id, is_learned FROM user_flashcard_progress
@@ -224,12 +303,14 @@ export const getStudyPath = async (req, res) => {
 
     const currentCardIndex = learningPathRows[0]?.current_card_index ?? 0;
 
+    const learnedCount = learnedCardIds.size;
+    const totalBatches = getSeparatedTotalBatches(totalCards, learnedCount);
+
     const journeyNodes = generateJourneyNodes(totalBatches);
     const totalNodes = journeyNodes.length;
     const completedNodes = Math.min(Math.max(Number(currentCardIndex) || 0, 0), totalNodes);
     const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
 
-    const learnedCount = learnedCardIds.size;
     const currentActiveNodeIndex = Math.max(0, Number(currentCardIndex) || 0);
 
     return res.json({
@@ -260,7 +341,6 @@ export const getProfileOverview = async (req, res) => {
       `SELECT
          u.username,
          u.total_xp,
-         u.streak_count,
          COALESCE((SELECT SUM(duration) FROM user_study_sessions WHERE user_id = ?), 0) AS total_time
        FROM users u
        WHERE u.id = ?`,
@@ -289,6 +369,35 @@ export const getProfileOverview = async (req, res) => {
   [userId, userId]
 );
 
+    // Tính streak_count chuẩn xác dựa trên lịch sử hoạt động (giống Analytics)
+    const [activityRows] = await db.query(
+      `SELECT DISTINCT activity_date AS date
+       FROM (
+         SELECT DATE(date) AS activity_date FROM user_study_sessions WHERE user_id = ?
+         UNION
+         SELECT DATE(completed_at) AS activity_date FROM quiz_sessions WHERE user_id = ? AND completed_at IS NOT NULL
+       ) AS all_activity
+       WHERE activity_date IS NOT NULL
+       ORDER BY activity_date DESC`,
+      [userId, userId]
+    );
+
+    const activityDates = (activityRows || []).map((row) => row.date ? new Date(row.date).toISOString().slice(0, 10) : null).filter(Boolean);
+    let calculatedStreak = 0;
+    let expectedDate = activityDates.length > 0 ? new Date(activityDates[0]) : null;
+
+    if (expectedDate) {
+      expectedDate = new Date(expectedDate.toISOString().slice(0, 10));
+      for (const dateString of activityDates) {
+        if (dateString === expectedDate.toISOString().slice(0, 10)) {
+          calculatedStreak += 1;
+          expectedDate.setDate(expectedDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+
     const [recentQuizzes] = await db.query(
       `SELECT
          qs.id,
@@ -312,7 +421,7 @@ export const getProfileOverview = async (req, res) => {
       username: user.username,
       email: user.email,
       total_xp: Number(user.total_xp ?? 0),
-      streak_count: Number(user.streak_count ?? 0),
+      streak_count: calculatedStreak,
       total_time: Number(user.total_time ?? 0),
       progress: progressRows,
       recentQuizzes,
@@ -609,17 +718,9 @@ export const resetBatchProgress = async (req, res) => {
       return res.status(400).json({ error: 'Thiếu tham số.' });
     }
 
-    // Get cards in batch
-    const startIdx = batchIndex * CHUNK_SIZE;
-    const [cardsRows] = await db.query(
-      `SELECT f.id FROM flashcards f
-       WHERE f.material_id = ?
-       ORDER BY f.id ASC
-       LIMIT ?, ?`,
-      [materialId, startIdx, CHUNK_SIZE]
-    );
-
-    const cardIds = cardsRows.map((r) => r.id);
+    const chunks = await getSortedAndChunkedFlashcards(userId, materialId);
+    const batch = chunks[batchIndex] || [];
+    const cardIds = batch.map((r) => r.id);
 
     if (cardIds.length > 0) {
       // Reset progress for these cards
@@ -673,16 +774,9 @@ export const completeFlashcardBatch = async (req, res) => {
       return res.status(400).json({ error: 'Thiếu tham số.' });
     }
 
-    const startIdx = batchIndex * CHUNK_SIZE;
-    const [cardsRows] = await db.query(
-      `SELECT f.id FROM flashcards f
-       WHERE f.material_id = ?
-       ORDER BY f.id ASC
-       LIMIT ?, ?`,
-      [materialId, startIdx, CHUNK_SIZE]
-    );
-
-    const cardIds = cardsRows.map((r) => r.id);
+    const chunks = await getSortedAndChunkedFlashcards(userId, materialId);
+    const batch = chunks[batchIndex] || [];
+    const cardIds = batch.map((r) => r.id);
     if (cardIds.length === 0) {
       return res.status(400).json({ error: 'Không tìm thấy thẻ cho lô này.' });
     }
@@ -875,15 +969,27 @@ export const getHomeWrongWords = async (req, res) => {
     if (lastRow && lastRow.last_completed_at) {
       // Chọn những câu trả lời có timestamp trong vòng 2 giờ trước completed_at
       const [recentRows] = await db.query(
-        `SELECT f.kanji, f.meaning
+        `WITH numbered_flashcards AS (
+           SELECT f.id, f.material_id, f.kanji, f.meaning,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY f.material_id 
+                    ORDER BY COALESCE(ufp.is_learned, 0) DESC, f.id ASC
+                  ) - 1 AS row_num
+           FROM flashcards f
+           LEFT JOIN user_flashcard_progress ufp 
+             ON ufp.flashcard_id = f.id AND ufp.user_id = ?
+         )
+         SELECT nf.kanji, nf.meaning
          FROM quiz_question_progress qqp
-         JOIN flashcards f ON qqp.material_id = f.material_id AND qqp.question_index = f.id
+         JOIN numbered_flashcards nf 
+           ON qqp.material_id = nf.material_id 
+           AND (qqp.batch_index * 10 + (qqp.question_index % 10)) = nf.row_num
          WHERE qqp.user_id = ? AND qqp.is_correct = 0
            AND qqp.answered_at <= ?
            AND qqp.answered_at >= DATE_SUB(?, INTERVAL 2 HOUR)
          ORDER BY qqp.answered_at DESC
          LIMIT 5`,
-        [userId, lastRow.last_completed_at, lastRow.last_completed_at]
+        [userId, userId, lastRow.last_completed_at, lastRow.last_completed_at]
       );
 
       rows = recentRows;
@@ -892,13 +998,25 @@ export const getHomeWrongWords = async (req, res) => {
     // Fallback: nếu không có quiz gần nhất hoặc không tìm thấy câu sai, dùng 5 câu sai gần nhất theo thời gian
     if (!rows || rows.length === 0) {
       const [fallbackRows] = await db.query(`
-        SELECT f.kanji, f.meaning
-        FROM quiz_question_progress qqp
-        JOIN flashcards f ON qqp.material_id = f.material_id AND qqp.question_index = f.id
-        WHERE qqp.user_id = ? AND qqp.is_correct = 0
-        ORDER BY qqp.answered_at DESC
-        LIMIT 5
-      `, [userId]);
+        WITH numbered_flashcards AS (
+           SELECT f.id, f.material_id, f.kanji, f.meaning,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY f.material_id 
+                    ORDER BY COALESCE(ufp.is_learned, 0) DESC, f.id ASC
+                  ) - 1 AS row_num
+           FROM flashcards f
+           LEFT JOIN user_flashcard_progress ufp 
+             ON ufp.flashcard_id = f.id AND ufp.user_id = ?
+         )
+         SELECT nf.kanji, nf.meaning
+         FROM quiz_question_progress qqp
+         JOIN numbered_flashcards nf 
+           ON qqp.material_id = nf.material_id 
+           AND (qqp.batch_index * 10 + (qqp.question_index % 10)) = nf.row_num
+         WHERE qqp.user_id = ? AND qqp.is_correct = 0
+         ORDER BY qqp.answered_at DESC
+         LIMIT 5
+      `, [userId, userId]);
       rows = fallbackRows;
     }
 

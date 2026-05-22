@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { 
-  View, Text, TextInput, TouchableOpacity, StyleSheet, 
-  Alert, Image, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator 
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Alert, Image, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthContext } from '../context/AuthContext';
@@ -13,8 +13,8 @@ const { width } = Dimensions.get('window');
 export default function LoginScreen({ navigation }: any) {
   const { login } = useAuthContext();
   const { colors } = useTheme();
-  const [email, setEmail] = useState('demo@japanese.local');
-  const [password, setPassword] = useState('demo123');
+  const [email, setEmail] = useState('ngoc@gmail.com');
+  const [password, setPassword] = useState('123456');
   const [isLoading, setIsLoading] = useState(false);
 
   const mascotSource = require('../../assets/sharkMagic.png');
@@ -35,9 +35,9 @@ export default function LoginScreen({ navigation }: any) {
   };
 
   const dynamicStyles = StyleSheet.create({
-    container: { 
-      flex: 1, 
-      backgroundColor: colors.background 
+    container: {
+      flex: 1,
+      backgroundColor: colors.background
     },
     mascotCircle: {
       width: 120,
@@ -66,35 +66,35 @@ export default function LoginScreen({ navigation }: any) {
       shadowRadius: 8,
       elevation: 2,
     },
-    input: { 
-      flex: 1, 
-      fontSize: 16, 
-      color: colors.text, 
-      fontWeight: '500' 
+    input: {
+      flex: 1,
+      fontSize: 16,
+      color: colors.text,
+      fontWeight: '500'
     },
-    title: { 
-      fontSize: 32, 
-      color: colors.text, 
-      fontWeight: '900', 
-      letterSpacing: -1 
+    title: {
+      fontSize: 32,
+      color: colors.text,
+      fontWeight: '900',
+      letterSpacing: -1
     },
-    subTitle: { 
-      textAlign: 'center', 
-      color: colors.textSecondary, 
-      marginTop: 10, 
-      lineHeight: 20, 
-      paddingHorizontal: 20 
+    subTitle: {
+      textAlign: 'center',
+      color: colors.textSecondary,
+      marginTop: 10,
+      lineHeight: 20,
+      paddingHorizontal: 20
     },
-    inputIcon: { 
+    inputIcon: {
       marginRight: 15,
       color: colors.primary
     },
-    loginBtn: { 
-      backgroundColor: colors.primary, 
-      height: 65, 
-      borderRadius: 20, 
-      justifyContent: 'center', 
-      alignItems: 'center', 
+    loginBtn: {
+      backgroundColor: colors.primary,
+      height: 65,
+      borderRadius: 20,
+      justifyContent: 'center',
+      alignItems: 'center',
       marginTop: 10,
       shadowColor: colors.primary,
       shadowOffset: { width: 0, height: 4 },
@@ -102,21 +102,21 @@ export default function LoginScreen({ navigation }: any) {
       shadowRadius: 10,
       elevation: 5,
     },
-    noAccountText: { 
-      color: colors.textSecondary, 
-      fontSize: 15 
+    noAccountText: {
+      color: colors.textSecondary,
+      fontSize: 15
     },
-    registerLink: { 
-      color: colors.primary, 
-      fontWeight: 'bold', 
-      fontSize: 15, 
-      textDecorationLine: 'underline' 
+    registerLink: {
+      color: colors.primary,
+      fontWeight: 'bold',
+      fontSize: 15,
+      textDecorationLine: 'underline'
     }
   });
 
   return (
     <SafeAreaView style={dynamicStyles.container}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
@@ -134,32 +134,32 @@ export default function LoginScreen({ navigation }: any) {
           <View style={styles.form}>
             <View style={dynamicStyles.inputWrapper}>
               <Mail size={20} color={colors.primary} style={styles.inputIcon} />
-              <TextInput 
-                placeholder="Email của bạn" 
-                style={dynamicStyles.input} 
-                value={email} 
-                onChangeText={setEmail} 
-                autoCapitalize="none" 
-                keyboardType="email-address" 
+              <TextInput
+                placeholder="Email của bạn"
+                style={dynamicStyles.input}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
                 placeholderTextColor={colors.textSecondary}
               />
             </View>
 
             <View style={dynamicStyles.inputWrapper}>
               <Lock size={20} color={colors.primary} style={styles.inputIcon} />
-              <TextInput 
-                placeholder="Mật khẩu" 
-                style={dynamicStyles.input} 
-                secureTextEntry 
-                value={password} 
-                onChangeText={setPassword} 
+              <TextInput
+                placeholder="Mật khẩu"
+                style={dynamicStyles.input}
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
                 placeholderTextColor={colors.textSecondary}
               />
             </View>
 
-            <TouchableOpacity 
-              style={[dynamicStyles.loginBtn, isLoading && { opacity: 0.8 }]} 
-              onPress={handleLogin} 
+            <TouchableOpacity
+              style={[dynamicStyles.loginBtn, isLoading && { opacity: 0.8 }]}
+              onPress={handleLogin}
               disabled={isLoading}
             >
               {isLoading ? (
@@ -194,10 +194,10 @@ const styles = StyleSheet.create({
   inputIcon: { marginRight: 15 },
   btnContent: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   loginText: { color: '#FFF', fontSize: 18, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
-  footer: { 
-    flexDirection: 'row', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginTop: 30,
     gap: 5
   },

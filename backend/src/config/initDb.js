@@ -1,5 +1,23 @@
 import db from './db.js';
 
+const addIndexIfNotExists = async (connection, tableName, indexName, columnsStr) => {
+    try {
+        const [rows] = await connection.query(
+            `SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS 
+             WHERE TABLE_SCHEMA = DATABASE() 
+               AND TABLE_NAME = ? 
+               AND INDEX_NAME = ?`,
+            [tableName, indexName]
+        );
+        if (rows.length === 0) {
+            await connection.query(`ALTER TABLE ${tableName} ADD INDEX ${indexName} (${columnsStr})`);
+            console.log(`[initDb] Added index ${indexName} to table ${tableName}`);
+        }
+    } catch (err) {
+        console.warn(`[initDb] Warning adding index ${indexName} to table ${tableName}:`, err.message);
+    }
+};
+
 const initDb = async () => {
     try {
         const connection = await db.getConnection();
@@ -41,6 +59,12 @@ const initDb = async () => {
         );
 
         await connection.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS global_hearts INT NOT NULL DEFAULT 5`);
+
+        // Thêm chỉ mục tối ưu hóa hiệu năng
+        await addIndexIfNotExists(connection, 'notifications', 'idx_notifications_user_id', 'user_id');
+        await addIndexIfNotExists(connection, 'material_shares', 'idx_material_shares_receiver', 'receiver_user_id');
+        await addIndexIfNotExists(connection, 'material_shares', 'idx_material_shares_sender', 'sender_user_id');
+
         connection.release();
         console.log('✅ initDb: Kết nối đến MySQL thành công.');
     } catch (err) {

@@ -1,7 +1,8 @@
-﻿import React, { useMemo } from 'react';
-import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View, Platform } from 'react-native';
-import { Bell, Camera, Mic, Moon, Sun, Search } from 'lucide-react-native';
+import React, { useMemo } from 'react';
+import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View, Platform, Alert } from 'react-native';
+import { Bell, Camera, Mic, Moon, Sun, Search, LogOut } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
+import { useAuthContext } from '../context/AuthContext';
 import { calculateLevelInfo } from '../utils/level';
 
 type AppHeaderSearchProps = {
@@ -31,6 +32,14 @@ export default function AppHeaderSearch({
 }: AppHeaderSearchProps) {
   const { theme, colors, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
+  const { logout } = useAuthContext();
+
+  const handleLogout = () => {
+    Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất?', [
+      { text: 'Hủy', style: 'cancel' },
+      { text: 'Đăng xuất', style: 'destructive', onPress: logout }
+    ]);
+  };
 
   // ✅ ĐỒNG BỘ 100% VỚI PROFILE: Sử dụng chính xác hàm trung tâm để tính toán cấp độ hiện tại
   const levelInfo = useMemo(() => calculateLevelInfo(userXp), [userXp]);
@@ -100,7 +109,7 @@ export default function AppHeaderSearch({
     },
     userName: {
       marginTop: 4,
-      fontSize: 24,
+      fontSize: 20,
       fontWeight: '800' as const,
       color: colors.text,
       lineHeight: 30,
@@ -111,8 +120,8 @@ export default function AppHeaderSearch({
       marginLeft: 12,
     },
     iconButton: {
-      width: 42,
-      height: 42,
+      width: 35,
+      height: 35,
       borderRadius: 14,
       backgroundColor: colors.card,
       borderWidth: 1,
@@ -167,7 +176,7 @@ export default function AppHeaderSearch({
       color: colors.text,
     },
     searchActions: {
-      flexDirection: 'row',
+      flexDirection: 'row' as const,
     },
     iconCircle: {
       width: 36,
@@ -185,7 +194,7 @@ export default function AppHeaderSearch({
         <View style={dynamicStyles.profileRow}>
           <View style={dynamicStyles.avatarCard}>
             <Image source={mascotSource} style={dynamicStyles.avatar} resizeMode="contain" />
-            
+
             {/* Hiển thị chuẩn xác nhãn viên nang phẳng của Level nhận từ hàm trung tâm */}
             <View style={dynamicStyles.levelBadgeMini}>
               <Text style={dynamicStyles.levelBadgeText}>Lv.{levelInfo.level}</Text>
@@ -198,8 +207,8 @@ export default function AppHeaderSearch({
         </View>
 
         <View style={dynamicStyles.actionRow}>
-          <TouchableOpacity 
-            style={dynamicStyles.iconButton} 
+          <TouchableOpacity
+            style={dynamicStyles.iconButton}
             activeOpacity={0.8}
             onPress={toggleTheme}
           >
@@ -220,6 +229,13 @@ export default function AppHeaderSearch({
                 <Text style={dynamicStyles.notificationBadgeText}>{notificationCount}</Text>
               </View>
             ) : null}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={dynamicStyles.iconButton}
+            activeOpacity={0.8}
+            onPress={handleLogout}
+          >
+            <LogOut size={20} color={colors.primary} />
           </TouchableOpacity>
         </View>
       </View>

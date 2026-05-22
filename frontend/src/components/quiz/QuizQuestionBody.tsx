@@ -514,6 +514,7 @@ export default function QuizQuestionBody({
   ]);
 
   const [dragLine, setDragLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const gestureTouchRef = useRef({ startX: 0, startY: 0 });
 
   const handlersRef = useRef({ onHandlePairSelection, onSetSelectedLeftId });
   const columnOffsetsRef = useRef({ left: 0, right: 0 });
@@ -531,47 +532,53 @@ export default function QuizQuestionBody({
         panResponders.current[word.id] = PanResponder.create({
           onStartShouldSetPanResponder: () => !hasSubmitted,
           onMoveShouldSetPanResponder: () => !hasSubmitted,
-          onPanResponderGrant: () => {
+          onPanResponderGrant: (e, gs) => {
             handlersRef.current.onSetSelectedLeftId(word.id);
             const left = leftItemLayouts.current[word.id];
             if (left) {
               const x1 = left.x + columnOffsetsRef.current.left + left.width;
               const y1 = left.y + left.height / 2;
-              setDragLine({ x1, y1, x2: x1, y2: y1 });
+              const startX = left.x + columnOffsetsRef.current.left + e.nativeEvent.locationX;
+              const startY = left.y + e.nativeEvent.locationY;
+              gestureTouchRef.current = { startX, startY };
+              setDragLine({ x1, y1, x2: startX, y2: startY });
             }
           },
           onPanResponderMove: (e, gs) => {
             setDragLine(prev => {
               if (!prev) return null;
-              return { ...prev, x2: prev.x1 + gs.dx, y2: prev.y1 + gs.dy };
+              const fingerX = gestureTouchRef.current.startX + gs.dx;
+              const fingerY = gestureTouchRef.current.startY + gs.dy;
+              return { ...prev, x2: fingerX, y2: fingerY };
             });
           },
           onPanResponderRelease: (e, gs) => {
             setDragLine(prev => {
               if (!prev) return null;
-              const dropX = prev.x2;
-              const dropY = prev.y2;
+              const fingerX = gestureTouchRef.current.startX + gs.dx;
+              const fingerY = gestureTouchRef.current.startY + gs.dy;
               let hitRightId: string | null = null;
               let hitLayout: {x: number, y: number, width: number, height: number} | null = null;
 
-              Object.entries(rightItemLayouts.current).forEach(([rId, layout]) => {
+              for (const [rId, layout] of Object.entries(rightItemLayouts.current)) {
                 const rx = layout.x + columnOffsetsRef.current.right;
                 const ry = layout.y;
                 if (
-                  dropX >= rx - 30 && dropX <= rx + layout.width + 30 &&
-                  dropY >= ry - 30 && dropY <= ry + layout.height + 30
+                  fingerX >= rx - 30 && fingerX <= rx + layout.width + 30 &&
+                  fingerY >= ry - 30 && fingerY <= ry + layout.height + 30
                 ) {
                   hitRightId = rId;
                   hitLayout = { x: rx, y: ry, width: layout.width, height: layout.height };
+                  break;
                 }
-              });
+              }
 
               if (hitRightId && hitLayout) {
                 // Animate snap
-                const startX = dropX;
-                const startY = dropY;
-                const targetX = (hitLayout as any).x;
-                const targetY = (hitLayout as any).y + (hitLayout as any).height / 2;
+                const startX = fingerX;
+                const startY = fingerY;
+                const targetX = hitLayout.x;
+                const targetY = hitLayout.y + hitLayout.height / 2;
                 
                 let progress = 0;
                 const animateSnap = () => {
@@ -590,8 +597,8 @@ export default function QuizQuestionBody({
                 return prev; // keep showing line while snapping
               } else {
                 // Snap back to origin
-                const startX = dropX;
-                const startY = dropY;
+                const startX = fingerX;
+                const startY = fingerY;
                 const targetX = prev.x1;
                 const targetY = prev.y1;
 
@@ -767,7 +774,13 @@ export default function QuizQuestionBody({
                         <TouchableOpacity
                           activeOpacity={0.85}
                           disabled={hasSubmitted}
-                          onPress={() => onSetSelectedLeftId(word.id)}
+                          onPress={() => {
+                            if (selectedRightId) {
+                              onHandlePairSelection(word.id, selectedRightId);
+                            } else {
+                              onSetSelectedLeftId(word.id);
+                            }
+                          }}
                           style={[
                             styles.matchItem,
                             isSelected && styles.matchSelected,

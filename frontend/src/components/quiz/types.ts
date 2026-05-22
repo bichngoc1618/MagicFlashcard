@@ -5,6 +5,7 @@ export type QuizWord = {
   kanji: string;
   hiragana: string;
   meaning: string;
+  is_learned?: number;
 };
 
 export type Tile = {

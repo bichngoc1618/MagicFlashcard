@@ -71,10 +71,13 @@ function AnimatedTab({
   );
 }
 
-export default function BottomNavigation({ activeTab }: Props) {
-  const navigation = useNavigation<StackNavigationProp<any>>();
+import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+
+export default function BottomNavigation({ state, navigation: tabNavigation }: BottomTabBarProps) {
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
+
+  const activeRouteName = state ? state.routes[state.index].name : '';
 
   // Ép đồng bộ bộ màu sắc tố đậm lục bảo thống nhất của hệ thống
   const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
@@ -112,45 +115,45 @@ export default function BottomNavigation({ activeTab }: Props) {
       <View style={dynamicStyles.container}>
         <AnimatedTab
           label="Trang chủ"
-          icon={<Home size={18} color={activeTab === 'home' ? themePrimaryColor : colors.textSecondary} />}
-          active={activeTab === 'home'}
-          onPress={() => navigation.navigate('Home')}
+          icon={<Home size={18} color={activeRouteName === 'Home' ? themePrimaryColor : colors.textSecondary} />}
+          active={activeRouteName === 'Home'}
+          onPress={() => tabNavigation.navigate('Home')}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />
 
         <AnimatedTab
           label="Hành trình"
-          icon={<BookOpenText size={18} color={activeTab === 'study' ? themePrimaryColor : colors.textSecondary} />}
-          active={activeTab === 'study'}
-          onPress={() => navigation.navigate('StudyJourney', { materialId: 1 })}
+          icon={<BookOpenText size={18} color={activeRouteName === 'StudyJourney' ? themePrimaryColor : colors.textSecondary} />}
+          active={activeRouteName === 'StudyJourney'}
+          onPress={() => tabNavigation.navigate('StudyJourney', { materialId: 1 })}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />
 
         <AnimatedTab
           label="Luyện nói"
-          icon={<Mic2 size={18} color={activeTab === 'SpeakingPractice' ? themePrimaryColor : colors.textSecondary} />}
-          active={activeTab === 'SpeakingPractice'}
-          onPress={() => navigation.navigate('SpeakingPractice')}
+          icon={<Mic2 size={18} color={activeRouteName === 'SpeakingPractice' ? themePrimaryColor : colors.textSecondary} />}
+          active={activeRouteName === 'SpeakingPractice'}
+          onPress={() => tabNavigation.navigate('SpeakingPractice')}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />
 
         <AnimatedTab
           label="Thư viện"
-          icon={<Library size={18} color={activeTab === 'library' ? themePrimaryColor : colors.textSecondary} />}
-          active={activeTab === 'library'}
-          onPress={() => navigation.navigate('Study')}
+          icon={<Library size={18} color={activeRouteName === 'Study' ? themePrimaryColor : colors.textSecondary} />}
+          active={activeRouteName === 'Study'}
+          onPress={() => tabNavigation.navigate('Study')}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />
 
         <AnimatedTab
           label="Cá nhân"
-          icon={<UserRound size={18} color={activeTab === 'profile' ? themePrimaryColor : colors.textSecondary} />}
-          active={activeTab === 'profile'}
-          onPress={() => navigation.navigate('Profile')}
+          icon={<UserRound size={18} color={activeRouteName === 'Profile' ? themePrimaryColor : colors.textSecondary} />}
+          active={activeRouteName === 'Profile'}
+          onPress={() => tabNavigation.navigate('Profile')}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />

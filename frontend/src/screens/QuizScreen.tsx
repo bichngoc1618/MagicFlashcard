@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, LayoutAnimation, Modal, View, Text, TouchableOpacity, Image, StyleSheet, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { StackScreenProps } from '@react-navigation/stack';
@@ -50,6 +50,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
 
   // CRITICAL SHIELD STATE: Ép màn hình hiển thị Kết quả ở tầng giao diện cao nhất
   const [localShowResult, setLocalShowResult] = React.useState(false);
+  const executeExitWrapperRef = React.useRef<() => void>(() => {});
 
   const materialId = route.params?.materialId ?? 1;
   const nodeId = route.params?.nodeId ?? '';
@@ -158,6 +159,8 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (e) => {
       if (localShowResult) {
+        e.preventDefault();
+        executeExitWrapperRef.current();
         return;
       }
 
@@ -284,6 +287,10 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
       console.warn('Navigation error in executeExitWrapper:', err);
     }
   };
+
+  React.useEffect(() => {
+    executeExitWrapperRef.current = executeExitWrapper;
+  });
 
   const safeHandleContinueQuestion = React.useCallback(() => {
     if (showResult || localShowResult) return;

@@ -16,14 +16,14 @@ import SpeakingPracticeScreen from '../screens/SpeakingPracticeScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import BottomNavigation from './BottomNavigation';
+
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
-  Home: undefined;
+  MainTabs: undefined;
   Dictionary: { query?: string } | undefined;
-  Study: undefined;
-  SpeakingPractice: undefined;
-  Profile: undefined;
   Notifications: undefined;
 
   // 🦈 Màn hình Lộ trình: Dùng materialId làm khóa chính
@@ -66,6 +66,22 @@ export type RootStackParamList = {
   };
 };
 const Stack = createStackNavigator<RootStackParamList>();
+const Tab = createBottomTabNavigator();
+
+function MainTabs() {
+  return (
+    <Tab.Navigator
+      tabBar={(props) => <BottomNavigation {...props} />}
+      screenOptions={{ headerShown: false }}
+    >
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="StudyJourney" component={StudyJourneyScreen} initialParams={{ materialId: 1 }} />
+      <Tab.Screen name="SpeakingPractice" component={SpeakingPracticeScreen} />
+      <Tab.Screen name="Study" component={StudyScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
 
 const AppNavigator = () => {
   const { isLoggedIn } = useAuthContext();
@@ -85,21 +101,18 @@ const AppNavigator = () => {
 
   return (
     <Stack.Navigator
-      initialRouteName="Home"
+      initialRouteName="MainTabs"
       screenOptions={{
         headerShown: false,
         cardStyle: { backgroundColor: colors.background }
       }}
     >
-      <Stack.Screen name="Home" component={HomeScreen} />
-      <Stack.Screen name="Study" component={StudyScreen} />
+      <Stack.Screen name="MainTabs" component={MainTabs} />
       <Stack.Screen name="StudyJourney" component={StudyJourneyScreen} />
       <Stack.Screen name="Flashcard" component={FlashcardScreen} />
       <Stack.Screen name="Quiz" component={QuizScreen} />
-      <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Notifications" component={NotificationScreen} />
       <Stack.Screen name="Dictionary" component={DictionaryScreen} />
-      <Stack.Screen name="SpeakingPractice" component={SpeakingPracticeScreen} />
     </Stack.Navigator>
   );
 };

@@ -11,14 +11,14 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { StackScreenProps } from '@react-navigation/stack';
-import { 
-  Mail, 
-  Sparkles, 
-  Award, 
-  Target, 
-  Crown, 
-  Flame, 
-  CheckCircle2, 
+import {
+  Mail,
+  Sparkles,
+  Award,
+  Target,
+  Crown,
+  Flame,
+  CheckCircle2,
   Calendar,
   Layers
 } from 'lucide-react-native';
@@ -53,11 +53,11 @@ type ProfileData = {
 const screenWidth = Dimensions.get('window').width;
 
 function getPersona(xp: number, accuracy: number) {
-  if (xp > 10000 && accuracy >= 85) return { title: 'Độc Cô Cầu Bại', sub: 'Học bá', color: '#FFD02C' };
-  if (accuracy >= 85) return { title: 'Nhất Kích Tất Trúng', sub: 'Siêu cấp', color: '#4CD964' };
-  if (xp > 5000) return { title: 'Cần Cù Bù Thông Minh', sub: 'Chiến thần', color: '#FF9500' };
-  if (accuracy > 0 && accuracy < 50) return { title: 'Sát Thủ Trắc Nghiệm', sub: 'Cần ôn tập kỹ hơn', color: '#FF3B30' };
-  return { title: 'Tân Binh', sub: 'Đang trên đà bứt phá', color: '#3B7A66' };
+  if (xp > 20000 && accuracy >= 85) return { title: 'Huyền Thoại', sub: 'Học bá ngôn ngữ', color: '#FFD02C' };
+  if (accuracy >= 85) return { title: 'Chiến Thần', sub: 'Phong độ cực ổn định', color: '#4CD964' };
+  if (xp > 10000) return { title: 'Mãnh Tướng', sub: 'Sắp thành công rồi!', color: '#FF9500' };
+  if (accuracy > 0 && accuracy < 50) return { title: 'Tập Sự', sub: 'Cố lên nào!', color: '#FF3B30' };
+  return { title: 'Tân Binh', sub: 'Tăng tốc nào', color: '#3B7A66' };
 }
 
 async function fetchProfileData(userId: number): Promise<ProfileData> {
@@ -185,15 +185,27 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
   const loadProfileData = useCallback(async () => {
     if (!user?.id) { setProfileData(null); setIsReady(true); return; }
-    setIsReady(false);
+
+    setProfileData(current => {
+      if (current === null) {
+        setIsReady(false);
+      }
+      return current;
+    });
+
     try {
       const data = await fetchProfileData(Number(user.id));
       setProfileData(data);
     } catch (error) {
-      setProfileData(null);
-    } finally { 
-      setIsReady(true); 
+      console.warn(error);
+    } finally {
+      setIsReady(true);
     }
+  }, [user?.id]);
+
+  React.useEffect(() => {
+    setProfileData(null);
+    setIsReady(false);
   }, [user?.id]);
 
   useFocusEffect(React.useCallback(() => { loadProfileData(); }, [loadProfileData]));
@@ -211,15 +223,15 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             <View style={dynamicStyles.profileCard}>
               <View style={styles.profileRow}>
                 <View style={[styles.avatarContainer, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-                  <Image 
-                    source={require('../../assets/sharkMagic.png')} 
+                  <Image
+                    source={require('../../assets/sharkMagic.png')}
                     style={styles.mascotAvatarImg}
                   />
                   <View style={[styles.levelBadgeMini, { backgroundColor: '#FFD02C', borderColor: colors.card }]}>
                     <Text style={styles.levelBadgeText}>Lv.{levelInfo.level}</Text>
                   </View>
                 </View>
-                
+
                 <View style={styles.profileInfo}>
                   <Text style={dynamicStyles.username} numberOfLines={1}>{profileData?.username ?? user?.username ?? 'Học viên'}</Text>
                   <View style={styles.emailRow}>
@@ -300,9 +312,9 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                       chartConfig={chartConfig}
                       accessor={"population"}
                       backgroundColor={"transparent"}
-                      paddingLeft={"35"} 
+                      paddingLeft={"35"}
                       center={[0, 0]}
-                      hasLegend={false} 
+                      hasLegend={false}
                       absolute
                     />
                     <View style={[styles.donutHole, { backgroundColor: colors.card }]} />
@@ -339,7 +351,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
             {/* NHẬT KÝ HOẠT ĐỘNG TRONG THÁNG */}
             <Text style={dynamicStyles.sectionTitle}>Nhật ký hoạt động tháng này</Text>
-            <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}> 
+            <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
               <View style={styles.calendarHeaderRow}>
                 <Calendar size={14} color={colors.textSecondary} />
               </View>
@@ -347,17 +359,17 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                 {monthActivityCells.map((cell) => (
                   <View key={cell.key} style={styles.monthCellWrapper}>
                     <View style={[
-                      styles.monthCell, 
-                      { 
-                        backgroundColor: cell.count ? themePrimaryColor : (isDark ? '#1E293B' : '#F1F5F9'), 
-                        borderColor: 'transparent' 
+                      styles.monthCell,
+                      {
+                        backgroundColor: cell.count ? themePrimaryColor : (isDark ? '#1E293B' : '#F1F5F9'),
+                        borderColor: 'transparent'
                       }
                     ]} />
                     <Text style={[styles.monthCellLabel, { color: colors.textSecondary }]}>{cell.date.getDate()}</Text>
                   </View>
                 ))}
               </View>
-              <View style={[styles.activityLegendRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}> 
+              <View style={[styles.activityLegendRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
                 <View style={styles.activityLegendItem}>
                   <View style={[styles.activityLegendDot, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: 'transparent' }]} />
                   <Text style={[styles.activityLegendText, { color: colors.textSecondary }]}>Nghỉ ngơi</Text>
@@ -371,16 +383,16 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
           </>
         )}
       </ScrollView>
-      <BottomNavigation activeTab="profile" />
+
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   profileRow: { flexDirection: 'row', alignItems: 'center', width: '100%', gap: 16 },
-  avatarContainer: { 
-    width: 64, height: 64, borderRadius: 20, 
-    justifyContent: 'center', alignItems: 'center', 
+  avatarContainer: {
+    width: 64, height: 64, borderRadius: 20,
+    justifyContent: 'center', alignItems: 'center',
     position: 'relative', borderWidth: 1,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.02, shadowRadius: 4 },
@@ -394,17 +406,17 @@ const styles = StyleSheet.create({
   },
   profileInfo: { flex: 1 },
   emailRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  levelBadgeMini: { 
-    position: 'absolute', 
-    bottom: -6, 
-    right: -10, 
+  levelBadgeMini: {
+    position: 'absolute',
+    bottom: -6,
+    right: -10,
     paddingHorizontal: 5,
     paddingVertical: 1.5,
-    borderRadius: 8, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    borderWidth: 1.5, 
-    zIndex: 10 
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    zIndex: 10
   },
   levelBadgeText: { fontSize: 8.5, fontWeight: '900', color: '#000000' },
   levelSection: { marginTop: 16, paddingTop: 14, borderTopWidth: 1, width: '100%' },

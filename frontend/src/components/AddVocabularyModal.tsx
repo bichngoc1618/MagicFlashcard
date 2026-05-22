@@ -18,6 +18,7 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  Image,
 } from 'react-native';
 
 import * as DocumentPicker from 'expo-document-picker';
@@ -114,6 +115,8 @@ export default function AddVocabularyModal({
     isLoadingLookup,
     setIsLoadingLookup,
   ] = useState(false);
+
+  const [isFileLoading, setIsFileLoading] = useState(false);
 
   const sheetAnim = useRef(
     new Animated.Value(600)
@@ -390,16 +393,40 @@ export default function AddVocabularyModal({
 
       if (result.canceled) return;
 
+      setIsFileLoading(true);
+
       const file =
         result.assets[0];
 
-      const base64 =
-        await FileSystem.readAsStringAsync(
-          file.uri,
-          {
-            encoding: 'base64',
-          }
-        );
+      let base64: string;
+      if (Platform.OS === 'web') {
+        const fileObj = (file as any).file || (result.assets[0] as any).file;
+        if (!fileObj) {
+          throw new Error('Không tìm thấy file object trên web');
+        }
+        base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const arrayBuffer = e.target?.result as ArrayBuffer;
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            resolve(btoa(binary));
+          };
+          reader.onerror = () => reject(new Error('FileReader error'));
+          reader.readAsArrayBuffer(fileObj);
+        });
+      } else {
+        base64 =
+          await FileSystem.readAsStringAsync(
+            file.uri,
+            {
+              encoding: 'base64',
+            }
+          );
+      }
 
       const workbook =
         XLSX.read(base64, {
@@ -411,8 +438,8 @@ export default function AddVocabularyModal({
         workbook.SheetNames.length === 0
       ) {
         Alert.alert(
-          'Lỗi',
-          'File không hợp lệ'
+          'Lỗi định dạng',
+          'Tệp tin Excel không hợp lệ hoặc không có trang tính (Sheet) nào.'
         );
 
         return;
@@ -423,90 +450,97 @@ export default function AddVocabularyModal({
           workbook.SheetNames[0]
         ];
 
-      const rows: any[] =
+      const sheetData: any[][] =
         XLSX.utils.sheet_to_json(
-          worksheet
+          worksheet,
+          { header: 1 }
         );
 
-      if (!rows.length) {
+      if (!sheetData || sheetData.length === 0) {
         Alert.alert(
-          'Thông báo',
-          'File không có dữ liệu'
+          'Lỗi dữ liệu',
+          'File Excel không chứa bất kỳ hàng dữ liệu nào.'
         );
 
         return;
       }
 
-      /* ================= VALIDATE TEMPLATE ================= */
+      /* ================= MATCH HEADERS (CASE-INSENSITIVE) ================= */
 
-      const firstRow = rows[0];
+      const headers = (sheetData[0] || []).map((h: any) =>
+        String(h || '')
+          .toLowerCase()
+          .trim()
+      );
 
-      const fileColumns =
-        Object.keys(
-          firstRow
-        ).map((k) =>
-          k
-            .toLowerCase()
-            .trim()
-        );
+      const kanjiColIndex = headers.indexOf('kanji');
+      const hiraganaColIndex = headers.indexOf('hiragana');
+      const meaningColIndex = headers.indexOf('meaning');
+      const exampleColIndex = headers.indexOf('example');
 
-      const isValid =
-        REQUIRED_COLUMNS.every(
-          (col) =>
-            fileColumns.includes(
-              col
-            )
-        );
+      const missingColumns: string[] = [];
+      if (kanjiColIndex === -1) missingColumns.push('kanji');
+      if (hiraganaColIndex === -1) missingColumns.push('hiragana');
+      if (meaningColIndex === -1) missingColumns.push('meaning');
+      if (exampleColIndex === -1) missingColumns.push('example');
 
-      if (!isValid) {
+      if (missingColumns.length > 0) {
         Alert.alert(
-          'Sai định dạng file',
-          'Vui lòng tải file mẫu và nhập đúng cấu trúc.'
+          'Sai cấu trúc cột',
+          `File Excel thiếu các cột bắt buộc sau: ${missingColumns.map(col => `'${col}'`).join(', ')}.\n\nVui lòng đảm bảo file Excel của bạn chứa đầy đủ các cột: 'kanji', 'hiragana', 'meaning', 'example' (chấp nhận chữ hoa, chữ thường và không quan trọng thứ tự).`
         );
 
         return;
       }
 
-      /* ================= PARSE ================= */
+      const rowsData = sheetData.slice(1);
+      if (rowsData.length === 0) {
+        Alert.alert(
+          'Lỗi dữ liệu',
+          'Không tìm thấy dòng dữ liệu từ vựng nào dưới dòng tiêu đề (Header).'
+        );
 
-      const cards: FlashcardPayload[] =
-        rows
-          .map((r: any) => ({
-            kanji: String(
-              r.kanji || ''
-            ).trim(),
+        return;
+      }
 
-            hiragana: String(
-              r.hiragana || ''
-            ).trim(),
+      /* ================= PARSE ROWS ================= */
 
-            meaning: String(
-              r.meaning || ''
-            ).trim(),
+      const getValueAt = (rowArray: any[], index: number): string => {
+        if (index === -1 || index >= rowArray.length) return '';
+        const val = rowArray[index];
+        if (val === null || val === undefined) return '';
+        return String(val).trim();
+      };
 
-            example: String(
-              r.example || ''
-            ).trim(),
+      const cards: FlashcardPayload[] = [];
 
-            word: String(
-              r.hiragana ||
-                r.kanji ||
-                ''
-            ).trim(),
-          }))
+      for (let i = 0; i < rowsData.length; i++) {
+        const row = rowsData[i];
+        if (!row || !Array.isArray(row)) continue;
 
-          /* remove empty rows */
-          .filter(
-            (card) =>
-              card.kanji ||
-              card.hiragana ||
-              card.meaning
-          );
+        const kanji = getValueAt(row, kanjiColIndex);
+        const hiragana = getValueAt(row, hiraganaColIndex);
+        const meaning = getValueAt(row, meaningColIndex);
+        const example = getValueAt(row, exampleColIndex);
+
+        // Bỏ qua hàng nếu tất cả các cột đều trống (null / rỗng)
+        if (!kanji && !hiragana && !meaning && !example) {
+          continue;
+        }
+
+        cards.push({
+          kanji,
+          hiragana,
+          meaning,
+          example,
+          word: hiragana || kanji || '',
+        });
+      }
 
       if (!cards.length) {
         Alert.alert(
-          'Thông báo',
-          'Không có dữ liệu hợp lệ'
+          'Không có dữ liệu hợp lệ',
+          'Tất cả các dòng dữ liệu trong tệp Excel đều trống hoặc không hợp lệ.'
         );
 
         return;
@@ -534,23 +568,33 @@ export default function AddVocabularyModal({
 
       /* ================= IMPORT ================= */
 
-      await onImportCards(
-        uniqueCards
-      );
+      try {
+        await onImportCards(
+          uniqueCards
+        );
+      } catch (err: any) {
+        Alert.alert(
+          'Lỗi import',
+          `Không thể nhập từ vựng vào hệ thống. Chi tiết: ${err.message || 'Lỗi không xác định.'}`
+        );
+        return;
+      }
 
       Alert.alert(
         'Import thành công',
-        `Đã thêm ${uniqueCards.length} flashcards`
+        `Đã thêm ${uniqueCards.length} flashcards mới thành công!`
       );
 
       closeModal();
-    } catch (err) {
+    } catch (err: any) {
       console.log(err);
 
       Alert.alert(
-        'Lỗi',
-        'Không thể đọc file Excel'
+        'Lỗi đọc tệp tin',
+        `Không thể đọc dữ liệu từ file Excel này. Chi tiết: ${err.message || 'Vui lòng kiểm tra định dạng tệp tin.'}`
       );
+    } finally {
+      setIsFileLoading(false);
     }
   }, [
     onImportCards,
@@ -930,6 +974,52 @@ export default function AddVocabularyModal({
               </TouchableOpacity>
               </View>
             )}
+
+            {/* LOADING OVERLAY */}
+            {(loading || isFileLoading) && (
+              <View style={styles.loadingOverlay}>
+                <View
+                  style={[
+                    StyleSheet.absoluteFillObject,
+                    {
+                      backgroundColor: colors.card,
+                      opacity: 0.95,
+                      borderTopLeftRadius: 28,
+                      borderTopRightRadius: 28,
+                    },
+                  ]}
+                />
+                
+                <View
+                  style={[
+                    styles.loadingAvatarCard,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: colors.background,
+                    },
+                  ]}
+                >
+                  <Image
+                    source={require('../../assets/sharkMagic.png')}
+                    style={styles.loadingAvatar}
+                    resizeMode="contain"
+                  />
+                </View>
+                <ActivityIndicator
+                  size="large"
+                  color={colors.primary}
+                  style={{ marginVertical: 16 }}
+                />
+                <Text
+                  style={[
+                    styles.loadingText,
+                    { color: colors.text },
+                  ]}
+                >
+                  Chờ một chút nhé...
+                </Text>
+              </View>
+            )}
           </Animated.View>
         </KeyboardAvoidingView>
       </View>
@@ -1094,5 +1184,34 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 16,
     alignItems: 'center',
+  },
+
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    zIndex: 999,
+  },
+
+  loadingAvatarCard: {
+    width: 100,
+    height: 100,
+    borderRadius: 32,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  loadingAvatar: {
+    width: 75,
+    height: 75,
+  },
+
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 });

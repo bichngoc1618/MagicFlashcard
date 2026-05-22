@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -23,7 +23,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import BottomNavigation from '../components/BottomNavigation';
 import AppHeaderSearch from '../components/AppHeaderSearch';
 import VocabularyManager from '../components/VocabularyManager';
-import { getMaterials, getUserStats, getNotifications, markNotificationsRead, getProfile, getProfileAnalytics, getHomeWrongWords } from '../api/api';
+import { getMaterials, getNotifications, markNotificationsRead, getProfile, getHomeWrongWords } from '../api/api';
 import { calculateLevelInfo } from '../utils/level';
 
 type HomeScreenProps = StackScreenProps<RootStackParamList, 'Home'>;
@@ -75,13 +75,10 @@ const getMaterialColorStyle = (title: string, isDark: boolean) => {
 
 const fetchHomeData = async (userId: number): Promise<HomeData & { recentQuizzes?: any[] }> => {
   try {
-    const [profile, analytics] = await Promise.all([
-      getProfile(userId),
-      getProfileAnalytics(userId),
-    ]);
+    const profile = await getProfile(userId);
 
-    const totalXP = Number(analytics?.totalXP ?? profile?.total_xp ?? 0);
-    const streakDays = Number(analytics?.streakDays ?? analytics?.streak_days ?? profile?.streak_count ?? 0);
+    const totalXP = Number(profile?.total_xp ?? 0);
+    const streakDays = Number(profile?.streak_count ?? 0);
     const wrongRes = await getHomeWrongWords(userId);
     const wrongWords = wrongRes?.wrongWords || [];
 
@@ -105,16 +102,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [isReady, setIsReady] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [materials, setMaterials] = useState<any[]>([]);
-  const [userStats, setUserStats] = useState({ streak: streakCount });
   const [homeData, setHomeData] = useState<HomeData>({ totalXP: 0, wrongWords: [] });
   const [giftNotification, setGiftNotification] = useState<NotificationItem | null>(null);
 
   const loadData = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const [matsRes, statsRes, homeRes] = await Promise.all([
+      const [matsRes, homeRes] = await Promise.all([
         getMaterials(user.id),
-        getPlatformStreak(user.id),
         fetchHomeData(user.id),
       ]);
 
@@ -141,23 +136,20 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       }
 
       setMaterials(recentMaterials);
-      setUserStats({ streak: statsRes?.streakCount ?? streakCount ?? 0 });
       setHomeData(homeRes);
     } catch (error) {
       console.warn('Lỗi load data:', error);
     } finally {
       setIsReady(true);
     }
-  }, [user?.id, streakCount]);
+  }, [user?.id]);
 
-  const getPlatformStreak = async (id: number) => {
-    try { return await getUserStats(id); } catch { return { streakCount }; }
-  };
-
-  const checkGiftNotifications = useCallback(async () => {
+  const checkNotifications = useCallback(async () => {
     if (!user?.id) return;
     try {
       const { notifications } = await getNotifications(user.id);
+      await refreshNotificationCount(notifications);
+
       const unreadShares = (notifications || []).filter(
         (item: NotificationItem) => item.type === 'share_received' && item.is_read === 0
       );
@@ -177,17 +169,16 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     } catch (error) {
       console.warn('Không thể kiểm tra thông báo nhận thẻ:', error);
     }
-  }, [user?.id]);
+  }, [user?.id, refreshNotificationCount]);
 
   useFocusEffect(useCallback(() => {
     loadData();
-    refreshNotificationCount();
-    checkGiftNotifications();
-  }, [loadData, refreshNotificationCount, checkGiftNotifications]));
+    checkNotifications();
+  }, [loadData, checkNotifications]));
 
   const lvlInfo = useMemo(() => calculateLevelInfo(homeData.totalXP), [homeData.totalXP]);
 
-  const streakDisplay = (homeData.streakDays ?? streakCount) || userStats.streak || 0;
+  const streakDisplay = homeData.streakDays ?? streakCount ?? 0;
   const streakMascot = require('../../assets/sharkMagic.png');
   const currentLesson = materials.find(m => m.status === 'in_progress') || materials[0];
   const currentLessonCompleted = currentLesson ? (currentLesson.completed_nodes ?? currentLesson.learned_cards ?? 0) : 0;
@@ -373,7 +364,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           })}
         </View>
       </ScrollView>
-      <BottomNavigation activeTab="home" />
+
     </ScreenContainer>
   );
 }

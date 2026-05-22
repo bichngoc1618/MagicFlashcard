@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import db from '../config/db.js';
 
-const SALT_ROUNDS = parseInt(process.env.SALT_ROUNDS || '10', 10);
+const SALT_ROUNDS = parseInt(process.env.SALT_ROUNDS || '8', 10);
 
 export const register = async (req, res) => {
   try {

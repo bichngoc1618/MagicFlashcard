@@ -39,7 +39,8 @@ const formatTimeAgo = (dateString: string) => {
 };
 
 export default function NotificationScreen({ navigation }: NotificationScreenProps) {
-  const { colors, isDark } = useTheme();
+  const { colors, theme } = useTheme();
+  const isDark = theme === 'dark';
   const { user } = useAuthContext();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);

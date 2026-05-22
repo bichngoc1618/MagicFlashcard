@@ -219,9 +219,6 @@ export default function QuizUI({
               onSetSelectedLeftId={onSetSelectedLeftId}
               onSetSelectedRightId={onSetSelectedRightId}
               onSetMatchingContainerHeight={onSetMatchingContainerHeight}
-              onResetMatchState={onResetMatchState}
-              onSetIsCorrect={onSetIsCorrect}
-              onContinue={onContinue}
               leftItemLayouts={leftItemLayouts}
               rightItemLayouts={rightItemLayouts}
             />
@@ -256,7 +253,6 @@ export default function QuizUI({
               onChangeInput={onChangeInput}
               onSelectOption={onSelectOption}
               onResetChosenTileIds={onResetChosenTileIds}
-              onReviewMistakes={() => onContinue()}
             />
           </View>
         </KeyboardAvoidingView>

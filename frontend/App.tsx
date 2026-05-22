@@ -14,10 +14,13 @@ import {
 import AppNavigator from './src/components/AppNavigator';
 import { StatusBar } from 'expo-status-bar';
 
-ErrorUtils.setGlobalHandler((error, isFatal) => {
-  console.log('GLOBAL ERROR:', error);
-  console.log('IS FATAL:', isFatal);
-});
+if (typeof ErrorUtils !== 'undefined') {
+  ErrorUtils.setGlobalHandler((error, isFatal) => {
+    console.log('GLOBAL ERROR:', error);
+    console.log('IS FATAL:', isFatal);
+  });
+}
+
 
 function AppContent() {
   const { theme, colors } = useTheme();

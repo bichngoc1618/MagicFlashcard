@@ -121,13 +121,13 @@ function getTimerForType(type: QuizType): number {
   switch (type) {
     case 'MATCH_HIRA':
     case 'MATCH_MEANING':
-      return 15;
+      return 20;
     case 'MULTIPLE_CHOICE':
       return 8;
     case 'SCRAMBLED_HIRA':
-      return 10;
+      return 20;
     case 'WRITE_HIRA':
-      return 12;
+      return 20;
     default:
       return 20;
   }
@@ -239,7 +239,7 @@ export default function useQuizScreen({
   const [totalPairAttempts, setTotalPairAttempts] = useState(0);
   const [totalMatchedPairs, setTotalMatchedPairs] = useState(0);
   const [showWrongPairsReview, setShowWrongPairsReview] = useState(false);
-  
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoNextRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -274,6 +274,7 @@ export default function useQuizScreen({
           kanji: card.kanji || '',
           hiragana: card.word || '',
           meaning: card.meaning || '',
+          is_learned: card.is_learned,
         }))
         .filter((word: QuizWord) => word.hiragana && word.meaning);
       setWords(normalizedWords);
@@ -441,13 +442,13 @@ export default function useQuizScreen({
 
   const tiles = useMemo(() => {
     if (!currentWord || !currentWord.hiragana || activeType !== 'SCRAMBLED_HIRA') return [];
-    
+
     const chars = currentWord.hiragana.split('');
     const noiseCount = Math.floor(Math.random() * 2) + 4;
     const hiraganaAlphabet = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめ moやゆよらりるれろわをん";
     const noiseChars = [];
     for (let i = 0; i < noiseCount; i++) {
-        noiseChars.push(hiraganaAlphabet[Math.floor(Math.random() * hiraganaAlphabet.length)]);
+      noiseChars.push(hiraganaAlphabet[Math.floor(Math.random() * hiraganaAlphabet.length)]);
     }
 
     return [...chars, ...noiseChars]
@@ -470,7 +471,7 @@ export default function useQuizScreen({
     if (matchWords.length === 0) return [];
     if (matchRoundCount === 1) return matchWords;
     if (matchWords.length <= 1) return matchWords;
-    
+
     const half = Math.ceil(matchWords.length / 2);
     if (matchRound === 0) {
       return matchWords.slice(0, half);
@@ -483,9 +484,9 @@ export default function useQuizScreen({
     () =>
       currentMatchWords.length > 0
         ? shuffle(currentMatchWords).map((word) => ({
-            id: word.id,
-            label: activeType === 'MATCH_HIRA' ? word.hiragana : word.meaning,
-          }))
+          id: word.id,
+          label: activeType === 'MATCH_HIRA' ? word.hiragana : word.meaning,
+        }))
         : [],
     [currentMatchWords, activeType]
   );
@@ -626,7 +627,7 @@ export default function useQuizScreen({
 
   useEffect(() => {
     clearAutoNextTimer();
-    
+
     // CRITICAL FIX 3: Ngăn chặn bộ hẹn giờ đếm ngược chạy ngầm khi màn hình kết quả đã mở ra
     if (isCorrect === null || showResult || isMatchMode) {
       return;

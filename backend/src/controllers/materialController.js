@@ -3,16 +3,23 @@ import { seedDefaultStudyContent } from '../config/defaultSeed.js';
 
 const CHUNK_SIZE = 10;
 
-const getTotalBatches = (totalCards) => {
-  if (!totalCards || totalCards <= 0) return 0;
-  const numFullChunks = Math.floor(totalCards / CHUNK_SIZE);
-  const remainder = totalCards % CHUNK_SIZE;
-  if (numFullChunks === 0) return 1;
-  return remainder >= 6 ? numFullChunks + 1 : numFullChunks;
+const getSeparatedTotalBatches = (totalCards, learnedCards) => {
+  const learnedCount = Number(learnedCards) || 0;
+  const unlearnedCount = Math.max(0, (Number(totalCards) || 0) - learnedCount);
+  
+  const getHelperBatches = (count) => {
+    if (!count || count <= 0) return 0;
+    const numFullChunks = Math.floor(count / CHUNK_SIZE);
+    const remainder = count % CHUNK_SIZE;
+    if (numFullChunks === 0) return 1;
+    return remainder >= 6 ? numFullChunks + 1 : numFullChunks;
+  };
+  
+  return getHelperBatches(learnedCount) + getHelperBatches(unlearnedCount);
 };
 
-const calculateNodeProgress = (totalCards, currentNodeIndex = 0) => {
-  const totalBatches = getTotalBatches(totalCards);
+const calculateNodeProgress = (totalCards, learnedCards, currentNodeIndex = 0) => {
+  const totalBatches = getSeparatedTotalBatches(totalCards, learnedCards);
   const totalNodes = totalBatches > 0 ? totalBatches * 5 + Math.floor((totalBatches - 1) / 2) + 1 : 0;
   const completedNodes = Math.min(Math.max(Number(currentNodeIndex) || 0, 0), totalNodes);
   const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
@@ -43,7 +50,7 @@ export const getMaterials = async (req, res) => {
     );
 
     const materialsWithProgress = materials.map((item) => {
-      const { totalNodes, completedNodes, progressPercentage } = calculateNodeProgress(item.total_cards, item.current_card_index);
+      const { totalNodes, completedNodes, progressPercentage } = calculateNodeProgress(item.total_cards, item.learned_cards, item.current_card_index);
       return {
         ...item,
         total_nodes: totalNodes,
@@ -152,7 +159,7 @@ export const getFlashcards = async (req, res) => {
        LEFT JOIN user_flashcard_progress ufp
          ON ufp.flashcard_id = f.id AND ufp.user_id = ?
        WHERE f.material_id = ?
-       ORDER BY f.id ASC`,
+       ORDER BY COALESCE(ufp.is_learned, 0) DESC, f.id ASC`,
       [userId, materialId]
     );
 
@@ -194,7 +201,7 @@ export const getStudyJourney = async (req, res) => {
        LEFT JOIN user_flashcard_progress ufp
          ON ufp.flashcard_id = f.id AND ufp.user_id = ?
        WHERE f.material_id = ?
-       ORDER BY f.id ASC`,
+       ORDER BY COALESCE(ufp.is_learned, 0) DESC, f.id ASC`,
       [userId, materialId]
     );
 
@@ -210,7 +217,7 @@ export const getStudyJourney = async (req, res) => {
     );
     const stats = statsRows[0] || { total_cards: 0, learned_cards: 0 };
 
-    const totalBatches = getTotalBatches(stats.total_cards);
+    const totalBatches = getSeparatedTotalBatches(stats.total_cards, stats.learned_cards);
     const totalNodes = totalBatches > 0 ? totalBatches * 5 + Math.floor((totalBatches - 1) / 2) + 1 : 0;
     const completedNodes = Math.min(Math.max(Number(learningPath.current_card_index) || 0, 0), totalNodes);
     const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
@@ -274,7 +281,7 @@ export const deleteFlashcard = async (req, res) => {
 export const getUserStats = async (req, res) => {
   try {
     const userId = Number(req.params.userId);
-    const [userRows] = await db.query('SELECT streak_count, total_xp, last_study_date, global_hearts FROM users WHERE id = ?', [userId]);
+    const [userRows] = await db.query('SELECT total_xp, last_study_date, global_hearts FROM users WHERE id = ?', [userId]);
     const user = userRows[0];
     if (!user) {
       return res.status(404).json({ error: 'Người dùng không tồn tại.' });
@@ -296,9 +303,38 @@ export const getUserStats = async (req, res) => {
       activeMinutes = Math.max(0, Math.round((new Date() - new Date(activeRows[0].start_time)) / 60000));
     }
 
+    // Tính streak_count chuẩn xác dựa trên lịch sử hoạt động
+    const [activityRows] = await db.query(
+      `SELECT DISTINCT activity_date AS date
+       FROM (
+         SELECT DATE(date) AS activity_date FROM user_study_sessions WHERE user_id = ?
+         UNION
+         SELECT DATE(completed_at) AS activity_date FROM quiz_sessions WHERE user_id = ? AND completed_at IS NOT NULL
+       ) AS all_activity
+       WHERE activity_date IS NOT NULL
+       ORDER BY activity_date DESC`,
+      [userId, userId]
+    );
+
+    const activityDates = (activityRows || []).map((row) => row.date ? new Date(row.date).toISOString().slice(0, 10) : null).filter(Boolean);
+    let calculatedStreak = 0;
+    let expectedDate = activityDates.length > 0 ? new Date(activityDates[0]) : null;
+
+    if (expectedDate) {
+      expectedDate = new Date(expectedDate.toISOString().slice(0, 10));
+      for (const dateString of activityDates) {
+        if (dateString === expectedDate.toISOString().slice(0, 10)) {
+          calculatedStreak += 1;
+          expectedDate.setDate(expectedDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+
     return res.json({ 
-      streakCount: user.streak_count,
-      streak_count: user.streak_count,
+      streakCount: calculatedStreak,
+      streak_count: calculatedStreak,
       total_xp: user.total_xp,
       last_study_date: user.last_study_date,
       global_hearts: user.global_hearts,

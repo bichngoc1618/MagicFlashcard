@@ -1,5 +1,5 @@
-import React, { createContext, useCallback, useEffect, useState } from 'react';
-import { Alert } from 'react-native';
+import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, AppState } from 'react-native';
 
 
 import { login as loginApi, register as registerApi, updateGamificationStats, refillHearts, getUserStats, deductHearts, getNotifications } from '../api/api';
@@ -33,7 +33,7 @@ type AuthContextValue = {
   updateXpAndStreakInDB: (earnedXp: number) => Promise<void>;
   refillHeartsWithXp: (hearts?: number, cost?: number) => Promise<number | undefined>;
   refreshUserStats: () => Promise<void>;
-  refreshNotificationCount: () => Promise<void>;
+  refreshNotificationCount: (preFetchedNotifications?: any[]) => Promise<void>;
   notificationCount: number;
   handleHeartLoss: () => void;
   deductHeartOnFailure: () => Promise<number>;
@@ -177,12 +177,12 @@ const deductHeartOnFailure = useCallback(async (): Promise<number> => {
     }
   };
 
-  // Load user stats and apply daily recovery only for hearts, without changing study date.
-  const loadUserData = async () => {
+  const refreshUserStats = async () => {
     if (!user) return;
     try {
       const stats = await getUserStats(user.id);
-      console.log('📊 User stats loaded:', stats);
+      console.log('📊 Refreshed user stats:', stats);
+
       const dbLastDateRaw = stats.last_study_date || null;
       const currentDate = getLocalDateString(new Date());
       const dbLastDate = dbLastDateRaw ? getLocalDateString(dbLastDateRaw) : null;
@@ -190,48 +190,57 @@ const deductHeartOnFailure = useCallback(async (): Promise<number> => {
       if (dbLastDate && dbLastDate < currentDate) {
         console.log('🌅 New day detected - restoring hearts for new day');
         await restoreHeartsForNewDay(user.id, currentDate, stats.global_hearts ?? 0);
-      } else {
-        console.log('❤️ Loading hearts from DB:', stats.global_hearts);
-        setGlobalHearts(stats.global_hearts ?? 5);
+        stats.global_hearts = 5;
       }
 
-      setLastStudyDate(dbLastDateRaw || '');
-    } catch (e) {
-      console.warn('Failed to load user stats for heart reset:', e);
-    }
-  };
-
-  const refreshUserStats = async () => {
-    if (!user) return;
-    try {
-      const stats = await getUserStats(user.id);
-      console.log('📊 Refreshed user stats:', stats);
       setGamificationState(stats);
     } catch (e) {
       console.warn('Failed to refresh user stats:', e);
     }
   };
 
-  const refreshNotificationCount = async () => {
+  const refreshNotificationCount = async (preFetchedNotifications?: any[]) => {
     if (!user?.id) {
       setNotificationCount(0);
       return;
     }
     try {
-      const result = await getNotifications(user.id);
-      setNotificationCount(Array.isArray(result.notifications) ? result.notifications.filter((item: any) => item.is_read === 0).length : 0);
+      const notifications = preFetchedNotifications || (await getNotifications(user.id)).notifications;
+      setNotificationCount(Array.isArray(notifications) ? notifications.filter((item: any) => item.is_read === 0).length : 0);
     } catch (e) {
       console.warn('Failed to refresh notification count:', e);
     }
   };
 
-  // 🛡️ LÁ CHẮN 2: CHỈ CHẠY loadUserData KHI USER ID THAY ĐỔI THỰC TẾ (Đăng nhập/Đăng xuất), 
-  // Loại bỏ hoàn toàn streakCount khỏi mảng dependency để triệt tiêu vòng lặp re-render vô tận.
+  // 🛡️ LÁ CHẮN 2: CHỈ CHẠY KHI USER ID THAY ĐỔI VÀ THEO DÕI APP STATE KHI USER TRỞ LẠI APP
+  const appStateRef = useRef(AppState.currentState);
+  const lastRefreshRef = useRef<number>(0);
+
   useEffect(() => {
+    let subscription: any;
     if (user?.id) {
-      loadUserData();
+      refreshUserStats();
       refreshNotificationCount();
+
+      subscription = AppState.addEventListener('change', (nextAppState) => {
+        // Chỉ gọi API khi thực sự chuyển từ background/inactive → active
+        if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+          const now = Date.now();
+          // Throttle: chỉ gọi lại sau ít nhất 30 giây
+          if (now - lastRefreshRef.current > 30000) {
+            lastRefreshRef.current = now;
+            refreshUserStats();
+            refreshNotificationCount();
+          }
+        }
+        appStateRef.current = nextAppState;
+      });
     }
+    return () => {
+      if (subscription) {
+        subscription.remove();
+      }
+    };
   }, [user?.id]); 
 
   const updateXpAndStreakInDB = async (earnedXp: number) => {

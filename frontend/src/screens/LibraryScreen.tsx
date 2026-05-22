@@ -292,7 +292,7 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
         )}
       </ScrollView>
 
-      <BottomNavigation activeTab="library" />
+
 
       {/* POPUP THÊM MỚI CHỐNG BÀN PHÍM ĐÈ HOÀN HẢO */}
       <Modal visible={addModalVisible} transparent animationType="fade" onRequestClose={closeAddModal}>

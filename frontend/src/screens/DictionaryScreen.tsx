@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Image,
   ScrollView,
@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Keyboard,
   StyleSheet,
+  Platform,
 } from 'react-native';
 
 import { ChevronLeft, Search, Volume2 } from 'lucide-react-native';
@@ -18,7 +19,8 @@ import { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../components/AppNavigator';
 import ScreenContainer from '../components/ScreenContainer';
 import BottomNavigation from '../components/BottomNavigation';
-import { useAudioPlayer } from 'expo-audio';
+import { Audio } from 'expo-av';
+import { speakTextToSpeech } from '../utils/tts';
 
 import * as wanakana from 'wanakana';
 
@@ -51,16 +53,47 @@ export default function DictionaryScreen({
     resultData?.title || ''
   )}&tl=ja&client=tw-ob`;
 
-  const player = useAudioPlayer(audioSource);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
   const handlePlayAudio = async () => {
     try {
-      await player.seekTo(0);
-      player.play();
+      if (!resultData?.title) return;
+
+      if (Platform.OS === 'web') {
+        await speakTextToSpeech(resultData.title, { language: 'ja-JP' });
+        return;
+      }
+
+      if (soundRef.current) {
+        await soundRef.current.stopAsync().catch(() => {});
+        await soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current = null;
+      }
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        { uri: audioSource },
+        { shouldPlay: true }
+      );
+      soundRef.current = newSound;
+      newSound.setOnPlaybackStatusUpdate(async (status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          await newSound.unloadAsync().catch(() => {});
+          if (soundRef.current === newSound) {
+            soundRef.current = null;
+          }
+        }
+      });
     } catch (e) {
-      console.log(e);
+      console.log('Error playing audio:', e);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+      }
+    };
+  }, []);
 
   const handleSearch = useCallback(
     async (

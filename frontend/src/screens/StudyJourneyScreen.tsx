@@ -516,21 +516,31 @@ export default function StudyJourneyScreen({
   );
 
   const handleBuyHeart = async () => {
+    const triggerHaptic = (type: Haptics.NotificationFeedbackType) => {
+      if (Platform.OS !== 'web' && Haptics && typeof Haptics.notificationAsync === 'function') {
+        try {
+          Haptics.notificationAsync(type).catch(() => {});
+        } catch (e) {
+          console.warn('Haptic notification failed:', e);
+        }
+      }
+    };
+
     if (topUpCount >= 3) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic(Haptics.NotificationFeedbackType.Error);
       return;
     }
 
     if (totalXp >= 200) {
       await refillHeartsWithXp(1, 200);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerHaptic(Haptics.NotificationFeedbackType.Success);
       setShowOutOfHeartsModal(false);
       if (pendingNode) {
         handleNodePress(pendingNode.node, pendingNode.index, pendingNode.matId, pendingNode.nav, pendingNode.currentUser);
         setPendingNode(null);
       }
     } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic(Haptics.NotificationFeedbackType.Error);
     }
   };
 
@@ -841,7 +851,7 @@ export default function StudyJourneyScreen({
           </TouchableOpacity>
         )}
 
-        <BottomNavigation activeTab="study" />
+
       </View>
 
       {/* POPUP HẾT TIM */}

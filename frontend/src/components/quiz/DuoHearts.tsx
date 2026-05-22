@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 
 import Animated, {
   useSharedValue,
@@ -120,6 +120,7 @@ const HeartItem = ({
           0,
           { duration: 200 },
           () => {
+            'worklet';
             runOnJS(setLocalAlive)(false);
           }
         ),
@@ -128,9 +129,15 @@ const HeartItem = ({
         })
       );
 
-      Haptics.notificationAsync(
-        Haptics.NotificationFeedbackType.Error
-      ).catch(() => {});
+      if (Platform.OS !== 'web' && Haptics && typeof Haptics.notificationAsync === 'function') {
+        try {
+          Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Error
+          ).catch(() => {});
+        } catch (e) {
+          console.warn('Haptics failed:', e);
+        }
+      }
 
       timeoutRef.current = setTimeout(() => {
         setShattered(false);

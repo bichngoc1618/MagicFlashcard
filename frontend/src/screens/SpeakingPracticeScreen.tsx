@@ -40,6 +40,8 @@ export default function SpeakingPracticeScreen() {
   
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+  const webMediaRecorderRef = useRef<any>(null);
+  const webAudioChunksRef = useRef<Blob[]>([]);
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -138,8 +140,18 @@ export default function SpeakingPracticeScreen() {
     scrollToBottom();
     try {
       const formData = new FormData();
-      // @ts-ignore
-      formData.append('file', { uri, type: 'audio/m4a', name: 'recording.m4a' });
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const file = new File([blob], 'recording.wav', { type: blob.type || 'audio/wav' });
+        formData.append('file', file);
+      } else {
+        // @ts-ignore
+        formData.append('file', { uri, type: 'audio/m4a', name: 'recording.m4a' });
+      }
+      if (user?.id) {
+        formData.append('userId', String(user.id));
+      }
       const data = await speakAudio(formData);
       const displayUserText = data.userCorrected || data.userOriginal || '(Âm thanh không rõ)';
       setMessages(prev => [
@@ -157,6 +169,34 @@ export default function SpeakingPracticeScreen() {
   };
 
   const handleStartListening = async () => {
+    if (Platform.OS === 'web') {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new (window.MediaRecorder || (window as any).webkitMediaRecorder)(stream);
+        webMediaRecorderRef.current = mediaRecorder;
+        webAudioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event: any) => {
+          if (event.data && event.data.size > 0) {
+            webAudioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(webAudioChunksRef.current, { type: 'audio/wav' });
+          const audioUrl = URL.createObjectURL(audioBlob);
+          handleVoiceChatWithAI(audioUrl);
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+        setIsListening(true);
+      } catch (err) {
+        console.error('Error starting web recording:', err);
+      }
+      return;
+    }
+
     try {
       const { granted } = await Audio.requestPermissionsAsync();
       if (!granted) return;
@@ -168,6 +208,14 @@ export default function SpeakingPracticeScreen() {
   };
 
   const handleStopListening = async () => {
+    if (Platform.OS === 'web') {
+      if (webMediaRecorderRef.current && webMediaRecorderRef.current.state !== 'inactive') {
+        webMediaRecorderRef.current.stop();
+        setIsListening(false);
+      }
+      return;
+    }
+
     if (!recording) return;
     setIsListening(false);
     try {
@@ -320,7 +368,7 @@ export default function SpeakingPracticeScreen() {
         <View style={{ height: Platform.OS === 'ios' ? 85 : 75 }} />
       </KeyboardAvoidingView>
 
-      <BottomNavigation activeTab="SpeakingPractice" />
+
     </SafeAreaView>
   );
 }

@@ -27,10 +27,12 @@ const useStreakCelebrationAnimation = (visible: boolean) => {
     if (!visible) return;
 
     const runHaptics = async () => {
-      try {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      } catch (error) {
-        console.warn('Streak celebration haptics failed:', error);
+      if (Platform.OS !== 'web' && Haptics && typeof Haptics.impactAsync === 'function') {
+        try {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        } catch (error) {
+          console.warn('Streak celebration haptics failed:', error);
+        }
       }
     };
 
@@ -140,6 +142,7 @@ const ShatteredHeartAnim = () => {
         withTiming(1.1, { duration: 150 }),
         withTiming(0.95, { duration: 100 }),
         withSpring(1.3, { damping: 4 }, () => {
+          'worklet';
           runOnJS(triggerShatterExplosion)();
         })
       );

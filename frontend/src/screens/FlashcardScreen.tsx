@@ -71,6 +71,7 @@ export default function FlashcardScreen({ navigation, route }: Props) {
             kanji: card.kanji || card.word || '',
             hiragana: card.hiragana || card.reading || card.word || '',
             meaning: card.meaning || '',
+            is_learned: card.is_learned,
           })));
         }
       } catch (error) {
@@ -130,12 +131,22 @@ export default function FlashcardScreen({ navigation, route }: Props) {
     });
   };
 
+  const triggerImpactHaptic = (style: Haptics.ImpactFeedbackStyle) => {
+    if (Platform.OS !== 'web' && Haptics && typeof Haptics.impactAsync === 'function') {
+      try {
+        Haptics.impactAsync(style).catch(() => {});
+      } catch (e) {
+        console.warn('Haptic impact failed:', e);
+      }
+    }
+  };
+
   const handleFlip = () => {
     const nextState = !showMeaning;
     setShowMeaning(nextState);
     spin.value = withTiming(nextState ? 180 : 0, { duration: 400 });
     
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerImpactHaptic(Haptics.ImpactFeedbackStyle.Light);
     
     if (nextState && currentWord?.hiragana) {
       playSound(currentWord.hiragana);
@@ -144,7 +155,7 @@ export default function FlashcardScreen({ navigation, route }: Props) {
 
   const handleToggleStatus = async () => {
     if (!currentWord) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerImpactHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
     // Đóng lật thẻ trước khi hành động ẩn/hiện trạng thái diễn ra
     setShowMeaning(false);
@@ -166,7 +177,7 @@ export default function FlashcardScreen({ navigation, route }: Props) {
   };
 
   const handleToggleShowAll = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerImpactHaptic(Haptics.ImpactFeedbackStyle.Medium);
     setShowAllCards(prev => !prev);
     setCurrentIndex(0);
     setShowMeaning(false);
