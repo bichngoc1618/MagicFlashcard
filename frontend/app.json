@@ -39,7 +39,11 @@
       "shortName": "Same",
       "lang": "vi",
       "favicon": "./assets/favicon.png",
-      "appleTouchIcon": "./assets/sharkMagic.png"
+      "appleTouchIcon": "./assets/sharkMagic.png",
+      "meta": {
+        "apple-mobile-web-app-capable": "yes",
+        "apple-mobile-web-app-title": "Same kun"
+      }
     },
     "runtimeVersion": {
       "policy": "appVersion"
