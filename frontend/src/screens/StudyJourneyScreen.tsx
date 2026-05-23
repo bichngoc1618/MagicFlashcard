@@ -17,6 +17,7 @@ import {
   Platform,
   Modal,
   InteractionManager,
+  StyleSheet,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';

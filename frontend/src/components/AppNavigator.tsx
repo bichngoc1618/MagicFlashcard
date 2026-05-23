@@ -25,6 +25,10 @@ export type RootStackParamList = {
   MainTabs: undefined;
   Dictionary: { query?: string } | undefined;
   Notifications: undefined;
+  Home: undefined;
+  Profile: undefined;
+  Study: undefined;
+  SpeakingPractice: undefined;
 
   // 🦈 Màn hình Lộ trình: Dùng materialId làm khóa chính
   StudyJourney: { 
@@ -74,11 +78,11 @@ function MainTabs() {
       tabBar={(props) => <BottomNavigation {...props} />}
       screenOptions={{ headerShown: false }}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="StudyJourney" component={StudyJourneyScreen} initialParams={{ materialId: 1 }} />
-      <Tab.Screen name="SpeakingPractice" component={SpeakingPracticeScreen} />
-      <Tab.Screen name="Study" component={StudyScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Home" component={HomeScreen as any} />
+      <Tab.Screen name="StudyJourney" component={StudyJourneyScreen as any} initialParams={{ materialId: 1 }} />
+      <Tab.Screen name="SpeakingPractice" component={SpeakingPracticeScreen as any} />
+      <Tab.Screen name="Study" component={StudyScreen as any} />
+      <Tab.Screen name="Profile" component={ProfileScreen as any} />
     </Tab.Navigator>
   );
 }
