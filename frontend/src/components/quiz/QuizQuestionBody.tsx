@@ -695,7 +695,7 @@ export default function QuizQuestionBody({
                   (line, index) => (
                     <React.Fragment key={`line-${index}`}>
                       <Path
-                        d={`M ${line.x1} ${line.y1} Q ${(line.x1 + line.x2) / 2} ${(line.y1 + line.y2) / 2 + 30} ${line.x2} ${line.y2}`}
+                        d={`M ${line.x1} ${line.y1} C ${line.x1 + 40} ${line.y1}, ${line.x2 - 40} ${line.y2}, ${line.x2} ${line.y2}`}
                         stroke={line.color}
                         strokeWidth={4}
                         strokeLinecap="round"
@@ -710,7 +710,7 @@ export default function QuizQuestionBody({
                 {dragLine && (
                   <React.Fragment>
                     <Path
-                      d={`M ${dragLine.x1} ${dragLine.y1} Q ${(dragLine.x1 + dragLine.x2) / 2} ${(dragLine.y1 + dragLine.y2) / 2 + 50} ${dragLine.x2} ${dragLine.y2}`}
+                      d={`M ${dragLine.x1} ${dragLine.y1} C ${dragLine.x1 + 40} ${dragLine.y1}, ${dragLine.x2 - 40} ${dragLine.y2}, ${dragLine.x2} ${dragLine.y2}`}
                       stroke={COLORS.secondary}
                       strokeWidth={4}
                       strokeDasharray="8 6"
@@ -725,7 +725,7 @@ export default function QuizQuestionBody({
                 {tempLine && (
                   <React.Fragment>
                     <Path
-                      d={`M ${tempLine.x1} ${tempLine.y1} Q ${(tempLine.x1 + tempLine.x2) / 2} ${(tempLine.y1 + tempLine.y2) / 2 + 30} ${tempLine.x2} ${tempLine.y2}`}
+                      d={`M ${tempLine.x1} ${tempLine.y1} C ${tempLine.x1 + 40} ${tempLine.y1}, ${tempLine.x2 - 40} ${tempLine.y2}, ${tempLine.x2} ${tempLine.y2}`}
                       stroke={wrongPair ? COLORS.wrong : COLORS.secondary}
                       strokeWidth={4}
                       strokeDasharray="8 6"
@@ -764,7 +764,7 @@ export default function QuizQuestionBody({
                     return (
                       <View
                         key={word.id}
-                        style={{width: '100%'}}
+                        style={{width: '100%', touchAction: 'none' as any}}
                         onLayout={(e) => {
                           const layout = e.nativeEvent.layout;
                           handleLayout('left', word.id, layout);
@@ -1212,7 +1212,7 @@ const styles = StyleSheet.create({
     justifyContent:
       'space-between',
     position: 'relative',
-    gap: 12,
+    gap: 60,
     paddingVertical: 6,
   },
 

@@ -3,6 +3,7 @@ import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View, Platform, A
 import { Bell, Camera, Mic, Moon, Sun, Search, LogOut } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuthContext } from '../context/AuthContext';
+import { useGlobalUI } from '../context/GlobalUIContext';
 import { calculateLevelInfo } from '../utils/level';
 
 type AppHeaderSearchProps = {
@@ -33,12 +34,13 @@ export default function AppHeaderSearch({
   const { theme, colors, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
   const { logout } = useAuthContext();
+  const { showAlert } = useGlobalUI();
 
   const handleLogout = () => {
-    Alert.alert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất?', [
+    showAlert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng không?', [
       { text: 'Hủy', style: 'cancel' },
       { text: 'Đăng xuất', style: 'destructive', onPress: logout }
-    ]);
+    ], 'warning');
   };
 
   // ✅ ĐỒNG BỘ 100% VỚI PROFILE: Sử dụng chính xác hàm trung tâm để tính toán cấp độ hiện tại
@@ -139,8 +141,8 @@ export default function AppHeaderSearch({
       position: 'absolute' as const,
       top: 6,
       right: 6,
-      minWidth: 18,
-      height: 18,
+      minWidth: 12,
+      height: 12,
       borderRadius: 9,
       backgroundColor: '#EF4444',
       justifyContent: 'center' as const,

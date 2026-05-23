@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Dimensions, Platform, Modal, PanResponder, Animated as RNAnimated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Platform, Modal, PanResponder, Animated as RNAnimated } from 'react-native';
 import { ChevronLeft, ChevronRight, X, Volume2, CheckCircle2, RotateCcw, Eye, EyeOff, Target } from 'lucide-react-native';
 import { StackScreenProps } from '@react-navigation/stack';
 import * as Haptics from 'expo-haptics';
@@ -12,6 +12,7 @@ import { updateStudyPathIndex } from '../api/api';
 
 import type { RootStackParamList } from '../components/AppNavigator';
 import ScreenContainer from '../components/ScreenContainer';
+import SharkLoader from '../components/ui/SharkLoader';
 import BottomNavigation from '../components/BottomNavigation';
 import ExitConfirmModal from '../components/ExitConfirmModal';
 import { getFlashcards, markCardLearned, getLearnedCards } from '../api/api';
@@ -274,7 +275,10 @@ export default function FlashcardScreen({ navigation, route }: Props) {
 
   const handleConfirmExit = () => {
     setShowExitConfirm(false);
-    navigation.navigate('StudyJourney', { materialId });
+    navigation.navigate('MainTabs' as any, {
+      screen: 'StudyJourney',
+      params: { materialId },
+    });
   };
 
   const frontAnimatedStyle = useAnimatedStyle(() => ({
@@ -296,7 +300,7 @@ export default function FlashcardScreen({ navigation, route }: Props) {
   });
 
   const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
-  if (isLoading) return <ActivityIndicator size="large" style={{ flex: 1, backgroundColor: colors.background }} />;
+  if (isLoading) return <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}><SharkLoader size="small" message="" /></View>;
 
   const currentBatchTotal = backendWords ? chunkVocabulary(backendWords)[batchIndex]?.length || 0 : 0;
   const isBatchAllMemorized = backendWords ? chunkVocabulary(backendWords)[batchIndex]?.every(w => memorizedIds.includes(w.id)) : false;
@@ -345,7 +349,7 @@ export default function FlashcardScreen({ navigation, route }: Props) {
                 key={currentWord.id}
                 style={[
                   styles.cardContainer, 
-                  { transform: [...position.getTranslateTransform(), { rotate }], opacity: fadeAnim }
+                  { transform: [...position.getTranslateTransform(), { rotate }], opacity: fadeAnim, touchAction: 'pan-y' as any }
                 ]}
                 {...panResponder.panHandlers}
               >

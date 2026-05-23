@@ -108,7 +108,6 @@ const AppNavigator = () => {
       }}
     >
       <Stack.Screen name="MainTabs" component={MainTabs} />
-      <Stack.Screen name="StudyJourney" component={StudyJourneyScreen} />
       <Stack.Screen name="Flashcard" component={FlashcardScreen} />
       <Stack.Screen name="Quiz" component={QuizScreen} />
       <Stack.Screen name="Notifications" component={NotificationScreen} />

@@ -1,4 +1,4 @@
-﻿import React, { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { Pencil, Trash2 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
@@ -18,7 +18,7 @@ type VocabularyItemProps = {
   onDelete: (id: number) => void;
 };
 
-export default function VocabularyItem({ card, onEdit, onDelete }: VocabularyItemProps) {
+const VocabularyItem = React.memo(({ card, onEdit, onDelete }: VocabularyItemProps) => {
   const { colors } = useTheme();
 
   const displayText = useMemo(
@@ -26,7 +26,7 @@ export default function VocabularyItem({ card, onEdit, onDelete }: VocabularyIte
     [card.word, card.hiragana],
   );
 
-  const dynamicStyles = StyleSheet.create({
+  const dynamicStyles = useMemo(() => StyleSheet.create({
     card: {
       marginBottom: 14,
       borderRadius: 20,
@@ -83,7 +83,7 @@ export default function VocabularyItem({ card, onEdit, onDelete }: VocabularyIte
       borderWidth: 1,
       borderColor: '#FEE2E2',
     },
-  });
+  }), [colors]);
 
   return (
     <View style={dynamicStyles.card}>
@@ -124,7 +124,9 @@ export default function VocabularyItem({ card, onEdit, onDelete }: VocabularyIte
       </View>
     </View>
   );
-}
+});
+
+export default VocabularyItem;
 
 const styles = StyleSheet.create({
   row: {

@@ -278,6 +278,41 @@ export const deleteFlashcard = async (req, res) => {
   }
 };
 
+export const deleteMaterial = async (req, res) => {
+  const connection = await db.getConnection();
+  try {
+    const materialId = Number(req.params.materialId);
+    if (!materialId) {
+      return res.status(400).json({ error: 'Thiếu materialId.' });
+    }
+
+    await connection.beginTransaction();
+
+    // Xoá tiến độ các flashcard thuộc material này
+    await connection.query(
+      'DELETE FROM user_flashcard_progress WHERE flashcard_id IN (SELECT id FROM flashcards WHERE material_id = ?)', 
+      [materialId]
+    );
+    // Xoá các flashcard thuộc material này
+    await connection.query('DELETE FROM flashcards WHERE material_id = ?', [materialId]);
+    // Xoá learning path
+    await connection.query('DELETE FROM learning_path WHERE material_id = ?', [materialId]);
+    // Xoá shares
+    await connection.query('DELETE FROM material_shares WHERE source_material_id = ? OR recipient_material_id = ?', [materialId, materialId]);
+    // Xoá material
+    await connection.query('DELETE FROM study_materials WHERE id = ?', [materialId]);
+
+    await connection.commit();
+    return res.json({ success: true });
+  } catch (error) {
+    await connection.rollback();
+    console.error('DELETE /materials/:id error', error);
+    return res.status(500).json({ error: 'Không thể xóa bộ thẻ.' });
+  } finally {
+    connection.release();
+  }
+};
+
 export const getUserStats = async (req, res) => {
   try {
     const userId = Number(req.params.userId);

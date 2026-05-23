@@ -5,6 +5,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
+import compression from "compression";
 import axios from "axios"; // Đã thêm axios vào để dùng cho tính năng tự ping
 
 // 1. Import kết nối Database (Tự động kích hoạt log kiểm tra)
@@ -20,8 +21,9 @@ const app = express();
 
 // --- CẤU HÌNH MIDDLEWARE ---
 app.use(cors()); // Cho phép Frontend (React Native) gọi API
-app.use(express.json()); // Đọc dữ liệu JSON từ body request
-app.use(express.urlencoded({ extended: true }));
+app.use(compression()); // Tối ưu hoá tốc độ tải bằng cách nén (Gzip) payload API
+app.use(express.json({ limit: "50mb" })); // Đọc dữ liệu JSON từ body request
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // --- KIỂM TRA THƯ MỤC UPLOADS ---
 // Tự động tạo thư mục uploads nếu Ngọc quên chưa tạo, tránh lỗi Multer

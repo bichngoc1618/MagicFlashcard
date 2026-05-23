@@ -51,6 +51,7 @@ export interface QuizUIProps {
   selectedLeftId: string | null;
   selectedRightId: string | null;
   remainingSeconds: number;
+  hearts: number;
   isMatchMode: boolean;
   isTimeUp: boolean;
   hasSubmitted: boolean;
@@ -109,6 +110,7 @@ export default function QuizUI({
   selectedLeftId,
   selectedRightId,
   remainingSeconds,
+  hearts,
   isMatchMode,
   isTimeUp,
   hasSubmitted,
@@ -160,6 +162,7 @@ export default function QuizUI({
           questionIndex={questionIndex}
           totalQuestionCount={totalQuestionCount}
           remainingSeconds={remainingSeconds}
+          hearts={hearts}
           onCancel={onCancel}
         />
 

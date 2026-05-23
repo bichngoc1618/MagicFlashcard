@@ -14,13 +14,13 @@ import {
   TouchableOpacity,
   View,
   Dimensions,
-  ActivityIndicator,
-  StyleSheet,
   Platform,
   Modal,
+  InteractionManager,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import SharkLoader from '../components/ui/SharkLoader';
 
 import {
   Star,
@@ -574,10 +574,12 @@ export default function StudyJourneyScreen({
         currentActiveNodeIndex,
       };
 
-      setJourneyData(data);
+      InteractionManager.runAfterInteractions(() => {
+        setJourneyData(data);
+        setIsLoading(false);
+      });
     } catch (e) {
       console.error(e);
-    } finally {
       setIsLoading(false);
     }
   }, [user?.id, materialId, route.params]);
@@ -610,7 +612,7 @@ export default function StudyJourneyScreen({
   if (isLoading || !journeyData) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <SharkLoader size="small" message="" />
       </View>
     );
   }

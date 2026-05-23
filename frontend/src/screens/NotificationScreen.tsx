@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
+import { FlatList, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuthContext } from '../context/AuthContext';
 import { getNotifications, markNotificationsRead } from '../api/api';
 import type { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../components/AppNavigator';
 import ScreenContainer from '../components/ScreenContainer';
-import { ArrowRight, Bell, MailOpen } from 'lucide-react-native';
+import SharkLoader from '../components/ui/SharkLoader';
+import { ArrowRight, Bell, MailOpen, ArrowLeft } from 'lucide-react-native';
 
 type NotificationScreenProps = StackScreenProps<RootStackParamList, 'Notifications'>;
 
@@ -73,7 +74,10 @@ export default function NotificationScreen({ navigation }: NotificationScreenPro
     if (!user?.id) return;
     try {
       if (notification.metadata?.materialId) {
-        navigation.navigate('StudyJourney', { materialId: Number(notification.metadata.materialId) });
+        navigation.navigate('MainTabs' as any, {
+          screen: 'StudyJourney',
+          params: { materialId: Number(notification.metadata.materialId) }
+        });
       }
       if (notification.is_read === 0) {
         await markNotificationsRead(user.id, [notification.id]);
@@ -158,13 +162,27 @@ export default function NotificationScreen({ navigation }: NotificationScreenPro
   return (
     <ScreenContainer>
       <View style={[styles.pageHeader, { borderBottomColor: colors.border, backgroundColor: colors.background }]}> 
-        <Text style={[styles.pageTitle, { color: colors.text }]}>Thông báo</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+          <TouchableOpacity 
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate('MainTabs' as any);
+              }
+            }} 
+            style={{ padding: 8, marginLeft: -8, marginRight: 8, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderRadius: 12 }}
+          >
+            <ArrowLeft size={20} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.pageTitle, { color: colors.text, marginBottom: 0 }]}>Thông báo</Text>
+        </View>
         <Text style={[styles.pageSubtitle, { color: colors.textSecondary }]}>Danh sách thẻ đã chia sẻ tới bạn</Text>
       </View>
 
       {loading ? (
         <View style={styles.loadingWrapper}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <SharkLoader size="small" message="" />
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.emptyWrapper}>

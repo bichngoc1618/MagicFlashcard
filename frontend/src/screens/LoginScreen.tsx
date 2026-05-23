@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, Image, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator
+  Image, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useGlobalUI } from '../context/GlobalUIContext';
+import SharkLoader from '../components/ui/SharkLoader';
 import { Mail, Lock, ArrowRight } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
@@ -13,6 +15,7 @@ const { width } = Dimensions.get('window');
 export default function LoginScreen({ navigation }: any) {
   const { login } = useAuthContext();
   const { colors } = useTheme();
+  const { showAlert } = useGlobalUI();
   const [email, setEmail] = useState('ngoc@gmail.com');
   const [password, setPassword] = useState('123456');
   const [isLoading, setIsLoading] = useState(false);
@@ -21,14 +24,14 @@ export default function LoginScreen({ navigation }: any) {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Thông báo', 'Vui lòng nhập đầy đủ thông tin');
+      showAlert('Thông báo', 'Vui lòng nhập đầy đủ thông tin', undefined, 'warning');
       return;
     }
     try {
       setIsLoading(true);
       await login(email, password);
     } catch (error: any) {
-      Alert.alert('Đăng nhập thất bại', error.message || 'Kiểm tra lại thông tin và thử lại.');
+      showAlert('Đăng nhập thất bại', error.message || 'Kiểm tra lại thông tin và thử lại.', undefined, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -163,7 +166,7 @@ export default function LoginScreen({ navigation }: any) {
               disabled={isLoading}
             >
               {isLoading ? (
-                <ActivityIndicator color="#FFF" />
+                <SharkLoader size="small" message="" />
               ) : (
                 <View style={styles.btnContent}>
                   <Text style={styles.loginText}>Đăng nhập</Text>

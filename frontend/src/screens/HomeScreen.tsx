@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
-  ActivityIndicator,
   Image,
   Modal,
   ScrollView,
@@ -23,6 +22,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import BottomNavigation from '../components/BottomNavigation';
 import AppHeaderSearch from '../components/AppHeaderSearch';
 import VocabularyManager from '../components/VocabularyManager';
+import SharkLoader from '../components/ui/SharkLoader';
 import { getMaterials, getNotifications, markNotificationsRead, getProfile, getHomeWrongWords } from '../api/api';
 import { calculateLevelInfo } from '../utils/level';
 
@@ -55,7 +55,7 @@ type NotificationItem = {
 // ====================================================================
 const getMaterialColorStyle = (title: string, isDark: boolean) => {
   const normalizedTitle = title.toLowerCase();
-  
+
   // Phối tone màu Cam Hổ Phách đậm sắc sảo
   // if (normalizedTitle.includes('kanji') || normalizedTitle.includes('hán tự') || normalizedTitle.includes('ngữ pháp')) {
   //   return {
@@ -64,7 +64,7 @@ const getMaterialColorStyle = (title: string, isDark: boolean) => {
   //     lightBg: isDark ? 'rgba(194, 109, 3, 0.18)' : '#FEE2E2', // Nền icon đậm đà hơn
   //   };
   // }
-  
+
   // Phối tone màu Xanh Ngọc lục bảo sâu thẳm
   return {
     primary: isDark ? '#2A5C4D' : '#3B7A66',
@@ -188,7 +188,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   if (!isReady) {
     return (
       <View style={[styles.loaderContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
+        <SharkLoader size="small" message="" />
       </View>
     );
   }
@@ -198,8 +198,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   return (
     <ScreenContainer>
-      <ScrollView 
-        showsVerticalScrollIndicator={false} 
+      <ScrollView
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scrollContent, { backgroundColor: colors.background }]}
       >
         <AppHeaderSearch
@@ -216,11 +216,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         {/* MODAL THÔNG BÁO QUÀ TẶNG */}
         <Modal visible={!!giftNotification} transparent animationType="fade">
           <View style={styles.notificationModalOverlay}>
-            <View style={[styles.notificationModalCard, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}> 
+            <View style={[styles.notificationModalCard, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
               <Text style={[styles.notificationModalTitle, { color: colors.text }]}>
                 {giftNotification?.type === 'share_received_aggregated' ? 'Bạn đã nhận được thẻ từ bạn bè' : 'Bạn đã nhận được bài học mới'}
               </Text>
-              <Text style={[styles.notificationModalText, { color: colors.textSecondary }]}> 
+              <Text style={[styles.notificationModalText, { color: colors.textSecondary }]}>
                 {giftNotification?.type === 'share_received_aggregated'
                   ? `Bạn có ${giftNotification?.metadata?.count ?? 0} bài học mới được chia sẻ.`
                   : `Từ ${giftNotification?.metadata?.senderName || 'Người dùng'}: ${giftNotification?.body}`}
@@ -274,14 +274,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         {/* STREAK CARD FLAT ĐẬM ĐÀ NỔI BẬT */}
         <View style={[styles.streakCard, { backgroundColor: streakBgColor }]}>
           <Image source={streakMascot} style={styles.streakMascotLeft} resizeMode="contain" />
-          
+
           <View style={styles.streakInfoContainer}>
             <View style={styles.streakTagRow}>
               <Flame size={14} color="#FFD02C" fill="#FFD02C" />
               <Text style={styles.streakTagText}>Chuỗi {streakDisplay} ngày</Text>
             </View>
             <Text style={styles.streakValue}>Cấp {lvlInfo.level}</Text>
-            
+
             <View style={styles.xpRow}>
               <Sparkles size={12} color="rgba(255, 255, 255, 0.75)" style={{ marginRight: 4 }} />
               <Text style={styles.streakSubtitle}>Còn {lvlInfo.xpToNextLevel} XP để lên cấp!</Text>
@@ -289,12 +289,12 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           </View>
 
           <View style={styles.levelCircle}>
-            <Progress.Circle 
-              size={72} 
-              progress={lvlInfo.progress} 
-              color="#FFD02C" 
-              unfilledColor="rgba(255,255,255,0.2)" 
-              borderWidth={0} 
+            <Progress.Circle
+              size={72}
+              progress={lvlInfo.progress}
+              color="#FFD02C"
+              unfilledColor="rgba(255,255,255,0.2)"
+              borderWidth={0}
               thickness={7}
               strokeCap="round"
             />
@@ -307,9 +307,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         {/* TIẾP TỤC HÀNH TRÌNH */}
         <SectionHeader title="Tiếp tục hành trình" colors={colors} />
         {currentLesson ? (
-          <TouchableOpacity 
+          <TouchableOpacity
             activeOpacity={0.95}
-            style={[styles.todayCard, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]} 
+            style={[styles.todayCard, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}
             onPress={() => navigation.navigate('StudyJourney', { materialId: currentLesson.id })}
           >
             <View style={styles.todayCardHeader}>
@@ -324,7 +324,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                   Đã hoàn thành {currentLessonCompleted}/{currentLessonTotal} mục
                 </Text>
               </View>
-              <View style={[styles.todayCardProgressBadge, { backgroundColor: isDark ? '#193D32' : '#D1FAE5' }]}> 
+              <View style={[styles.todayCardProgressBadge, { backgroundColor: isDark ? '#193D32' : '#D1FAE5' }]}>
                 <Text style={[styles.todayCardProgressText, { color: isDark ? '#34D399' : '#275245' }]}>
                   {Math.round(currentLessonProgress * 100)}%
                 </Text>
@@ -335,34 +335,51 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         ) : null}
 
         {/* THƯ VIỆN CỦA BẠN */}
-        <SectionHeader 
-          title="Thư viện của bạn" 
-          colors={colors} 
-          actionLabel="Xem tất cả" 
-          onAction={() => navigation.navigate('Study')} 
+        <SectionHeader
+          title="Thư viện của bạn"
+          colors={colors}
+          actionLabel="Xem tất cả"
+          onAction={() => navigation.navigate('Study')}
         />
-        <View style={styles.courseGrid}>
-          {materials.map((item) => {
-            const statsCount = item.completed_nodes !== undefined && item.total_nodes !== undefined
-              ? `${item.completed_nodes}/${item.total_nodes} mục`
-              : `${item.learned_cards || 0}/${item.total_cards || 0} từ`;
-            const progressValue = item.total_nodes 
-              ? (item.node_progress_percentage || 0) / 100 
-              : item.total_cards ? item.learned_cards / item.total_cards : 0;
-            return (
-              <SmallCourseCard
-                key={item.id}
-                materialId={item.id}
-                title={item.title}
-                stats={statsCount}
-                progress={progressValue}
-                onPress={() => navigation.navigate('StudyJourney', { materialId: item.id })}
-                colors={colors}
-                isDark={isDark}
-              />
-            );
-          })}
-        </View>
+        {materials.length === 0 ? (
+          <View style={[styles.emptyStateContainer, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
+            <Image source={require('../../assets/sharkMagic.png')} style={styles.emptyStateImage} />
+            <Text style={[styles.emptyStateTitle, { color: colors.text }]}>Chào mừng bạn mới!</Text>
+            <Text style={[styles.emptyStateSub, { color: colors.textSecondary }]}>
+              Hành trình chinh phục tiếng Nhật bắt đầu từ đây. Hãy tạo bộ thẻ đầu tiên của bạn nhé!
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={[styles.emptyStateBtn, { backgroundColor: colors.primary }]}
+              onPress={() => navigation.navigate('Study')}
+            >
+              <Text style={styles.emptyStateBtnText}>Tạo bộ từ vựng ngay</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.courseGrid}>
+            {materials.map((item) => {
+              const statsCount = item.completed_nodes !== undefined && item.total_nodes !== undefined
+                ? `${item.completed_nodes}/${item.total_nodes} mục`
+                : `${item.learned_cards || 0}/${item.total_cards || 0} từ`;
+              const progressValue = item.total_nodes
+                ? (item.node_progress_percentage || 0) / 100
+                : item.total_cards ? item.learned_cards / item.total_cards : 0;
+              return (
+                <SmallCourseCard
+                  key={item.id}
+                  materialId={item.id}
+                  title={item.title}
+                  stats={statsCount}
+                  progress={progressValue}
+                  onPress={() => navigation.navigate('StudyJourney', { materialId: item.id })}
+                  colors={colors}
+                  isDark={isDark}
+                />
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
 
     </ScreenContainer>
@@ -394,17 +411,17 @@ function SmallCourseCard({ title, stats, progress, onPress, materialId, colors, 
         </View>
         <VocabularyManager materialId={materialId} materialTitle={title} iconSize={16} />
       </View>
-      
+
       <Text style={[styles.courseCardTitle, { color: colors.text }]} numberOfLines={1}>{title}</Text>
       <Text style={[styles.courseCardStats, { color: colors.textSecondary }]}>{stats}</Text>
-      
+
       <ProgressBar progress={progress} colors={colors} isDark={isDark} title={title} height={8} />
-      
+
       <View style={styles.btn3DWrapper}>
         <View style={[styles.btn3DBase, { backgroundColor: nodePalette.shadow }]} />
-        <TouchableOpacity 
-          activeOpacity={0.9} 
-          style={[styles.btn3DTop, { backgroundColor: nodePalette.primary }]} 
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={[styles.btn3DTop, { backgroundColor: nodePalette.primary }]}
           onPress={onPress}
         >
           <Text style={styles.courseCardButtonText}>Học tiếp</Text>
@@ -417,31 +434,31 @@ function SmallCourseCard({ title, stats, progress, onPress, materialId, colors, 
 function ProgressBar({ progress, isDark, title, height = 10 }: { progress: number; colors: any; isDark: boolean; title: string; height?: number }) {
   const nodePalette = useMemo(() => getMaterialColorStyle(title, isDark), [title, isDark]);
   const trackBg = isDark ? '#1E293B' : '#E2E8F0';
-  
+
   return (
     <View style={[styles.progressBarContainer, { backgroundColor: trackBg, height }]}>
-      <View 
+      <View
         style={[
-          styles.progressBarFill, 
-          { 
+          styles.progressBarFill,
+          {
             width: `${Math.min(progress * 100, 100)}%`,
-            backgroundColor: nodePalette.primary 
+            backgroundColor: nodePalette.primary
           }
-        ]} 
+        ]}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  loaderContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center'
   },
-  scrollContent: { 
-    paddingHorizontal: 16, 
-    paddingBottom: 110 
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 110
   },
   sectionSpacing: { height: 12 },
   streakCard: {
@@ -461,9 +478,9 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   streakInfoContainer: { flex: 1 },
-  streakTagRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
+  streakTagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
     backgroundColor: 'rgba(255, 255, 255, 0.22)',
     alignSelf: 'flex-start',
@@ -482,10 +499,10 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, color: '#28a068' },
   sectionAction: { flexDirection: 'row', alignItems: 'center' },
   sectionActionText: { fontSize: 13, fontWeight: '700', marginRight: 2 },
-  todayCard: { 
-    borderRadius: 24, 
-    padding: 20, 
-    marginBottom: 20, 
+  todayCard: {
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 20,
     borderWidth: 1,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.05, shadowRadius: 10 },
@@ -500,11 +517,11 @@ const styles = StyleSheet.create({
   todayCardProgressBadge: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   todayCardProgressText: { fontSize: 12, fontWeight: '900' },
   courseGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  courseCard: { 
-    width: '48%', 
-    borderRadius: 24, 
-    padding: 16, 
-    marginBottom: 16, 
+  courseCard: {
+    width: '48%',
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 16,
     borderWidth: 1,
     justifyContent: 'space-between',
     ...Platform.select({
@@ -519,7 +536,7 @@ const styles = StyleSheet.create({
   courseCardButtonText: { color: 'white', fontSize: 13, fontWeight: '900' },
   progressBarContainer: { width: '100%', borderRadius: 12, overflow: 'hidden' },
   progressBarFill: { height: '100%', borderRadius: 12 },
-  
+
   btn3DWrapper: {
     marginTop: 14,
     height: 38,
@@ -583,5 +600,49 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 12,
+  },
+  emptyStateContainer: {
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    marginTop: 8,
+    marginBottom: 20,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 16 },
+      android: { elevation: 3 },
+    }),
+  },
+  emptyStateImage: {
+    width: 140,
+    height: 140,
+    marginBottom: 20,
+    resizeMode: 'contain',
+  },
+  emptyStateTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    marginBottom: 10,
+    letterSpacing: -0.5,
+  },
+  emptyStateSub: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+    fontWeight: '500',
+    paddingHorizontal: 10,
+  },
+  emptyStateBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  emptyStateBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
   },
 });

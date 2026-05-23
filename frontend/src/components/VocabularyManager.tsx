@@ -1,4 +1,4 @@
-﻿import React, {
+import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -10,7 +10,6 @@ import {
   Animated,
   Alert,
   Modal,
-  ScrollView,
   Text,
   TouchableOpacity,
   View,
@@ -19,12 +18,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  FlatList,
+  ScrollView,
 } from 'react-native';
 
-import { Menu, Plus, X, Share2 } from 'lucide-react-native';
+import { Menu, Plus, X, Share2, Trash2 } from 'lucide-react-native';
 
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useGlobalUI } from '../context/GlobalUIContext';
 import {
   createFlashcard,
   deleteFlashcard,
@@ -32,6 +34,7 @@ import {
   bulkCreateFlashcards,
   updateFlashcard,
   shareMaterial,
+  deleteMaterial,
 } from '../api/api';
 
 import VocabularyItem from './VocabularyItem';
@@ -50,15 +53,18 @@ type VocabularyManagerProps = {
   materialId: number;
   materialTitle?: string;
   iconSize?: number;
+  onMaterialDeleted?: () => void;
 };
 
 export default function VocabularyManager({
   materialId,
   materialTitle,
   iconSize = 18,
+  onMaterialDeleted,
 }: VocabularyManagerProps) {
   const { user, refreshNotificationCount } = useAuthContext();
   const { colors } = useTheme();
+  const { showAlert, showLoader, hideLoader } = useGlobalUI();
 
   const [cards, setCards] = useState<FlashcardData[]>([]);
   const [dropdownVisible, setDropdownVisible] = useState(false);
@@ -150,32 +156,57 @@ export default function VocabularyManager({
 
   /* ================= DELETE ================= */
   const handleDeleteCard = (id: number) => {
-    Alert.alert('Xóa từ vựng', 'Bạn chắc chưa?', [
+    showAlert('Xóa từ vựng', 'Bạn chắc chắn muốn xóa từ vựng này?', [
       { text: 'Hủy', style: 'cancel' },
-      {
-        text: 'Xóa',
-        style: 'destructive',
-        onPress: async () => {
-          setActionLoading(true);
-          try {
-            await deleteFlashcard(id);
-            setCards((prev) => prev.filter((c) => c.id !== id));
-            showToast('Đã xóa');
-          } catch (e) {
-            Alert.alert('Lỗi', 'Không xóa được');
-          } finally {
-            setActionLoading(false);
-          }
-        },
-      },
-    ]);
+      { text: 'Xóa', style: 'destructive', onPress: () => performDeleteCard(id) },
+    ], 'warning');
+  };
+
+  const performDeleteCard = async (id: number) => {
+    showLoader('Đang xóa từ vựng...');
+    try {
+      await deleteFlashcard(id);
+      setCards((prev) => prev.filter((c) => c.id !== id));
+      showToast('Đã xóa từ vựng');
+    } catch (e) {
+      showAlert('Lỗi', 'Không xóa được từ vựng', undefined, 'error');
+    } finally {
+      hideLoader();
+    }
+  };
+
+  const handleDeleteMaterial = () => {
+    setDropdownVisible(false);
+    showAlert(
+      'Xác nhận xóa',
+      `Bạn có chắc chắn muốn xóa bộ thẻ "${materialTitle || 'này'}" không? Mọi dữ liệu liên quan sẽ bị xóa vĩnh viễn.`,
+      [
+        { text: 'Hủy', style: 'cancel' },
+        { text: 'Xóa', style: 'destructive', onPress: performDeleteMaterial }
+      ],
+      'warning'
+    );
+  };
+
+  const performDeleteMaterial = async () => {
+    showLoader('Đang xóa bộ thẻ...');
+    try {
+      await deleteMaterial(materialId);
+      if (onMaterialDeleted) {
+        onMaterialDeleted();
+      }
+    } catch (error) {
+      showAlert('Lỗi', 'Không xóa được bộ thẻ', undefined, 'error');
+    } finally {
+      hideLoader();
+    }
   };
 
   /* ================= SAVE ================= */
   const handleSaveCard = async (payload: any) => {
     if (!user?.id) return;
 
-    setActionLoading(true);
+    showLoader('Đang lưu từ vựng...');
 
     try {
       if (selectedCard) {
@@ -189,24 +220,24 @@ export default function VocabularyManager({
       await refreshCards();
       closeEditor();
     } catch (e) {
-      Alert.alert('Lỗi', 'Không lưu được');
+      showAlert('Lỗi', 'Không lưu được', undefined, 'error');
     } finally {
-      setActionLoading(false);
+      hideLoader();
     }
   };
 
   /* ================= BULK ================= */
   const handleBulkImport = async (payloads: any[]) => {
-    setActionLoading(true);
+    showLoader('Đang import...');
 
     try {
       await bulkCreateFlashcards(materialId, payloads);
       await refreshCards();
       showToast(`Đã thêm ${payloads.length} từ`);
     } catch (e) {
-      Alert.alert('Lỗi import');
+      showAlert('Lỗi', 'Không import được', undefined, 'error');
     } finally {
-      setActionLoading(false);
+      hideLoader();
     }
   };
 
@@ -235,11 +266,11 @@ export default function VocabularyManager({
       return;
     }
 
-    setShareLoading(true);
+    showLoader('Đang chia sẻ...');
     try {
       const result = await shareMaterial(Number(user.id), email, materialId);
       showToast(`Đã chia sẻ thẻ cho ${email}`);
-      Alert.alert('Chia sẻ thành công', `Bạn đã chia sẻ thẻ cho ${email}, chúc mừng bạn được +100xp.`);
+      showAlert('Chia sẻ thành công', `Bạn đã chia sẻ thẻ cho ${email}, chúc mừng bạn được +100xp.`, undefined, 'success');
       closeShareModal();
       if (refreshNotificationCount) {
         refreshNotificationCount();
@@ -249,9 +280,9 @@ export default function VocabularyManager({
       }
     } catch (error: any) {
       const message = error?.message || 'Không thể gửi yêu cầu chia sẻ. Vui lòng thử lại.';
-      Alert.alert('Lỗi chia sẻ', message);
+      showAlert('Lỗi chia sẻ', message, undefined, 'error');
     } finally {
-      setShareLoading(false);
+      hideLoader();
     }
   };
 
@@ -444,7 +475,7 @@ export default function VocabularyManager({
               const top = dropdownAnchor.y + 8;
               return (
                 <View style={{ position: 'absolute', left, top, width: boxWidth }}>
-                  <View style={[dynamicStyles.dropdownBox, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+                  <View style={[dynamicStyles.dropdownBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <TouchableOpacity style={dynamicStyles.dropdownItem} onPress={() => { setDropdownVisible(false); toggleSheet(); }}>
                       <Text style={[dynamicStyles.dropdownText, { color: colors.text }]}>Quản lý</Text>
                     </TouchableOpacity>
@@ -452,6 +483,12 @@ export default function VocabularyManager({
                       <View style={dynamicStyles.dropdownRow}>
                         <Share2 size={16} color={colors.primary} />
                         <Text style={[dynamicStyles.dropdownText, { color: colors.text }]}>Chia sẻ</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[dynamicStyles.dropdownItem, { borderBottomWidth: 0 }]} onPress={handleDeleteMaterial}>
+                      <View style={dynamicStyles.dropdownRow}>
+                        <Trash2 size={16} color={colors.danger || '#EF4444'} />
+                        <Text style={[dynamicStyles.dropdownText, { color: colors.danger || '#EF4444' }]}>Xóa bộ thẻ</Text>
                       </View>
                     </TouchableOpacity>
                   </View>
@@ -469,7 +506,7 @@ export default function VocabularyManager({
         >
           <TouchableOpacity style={dynamicStyles.dropdownOverlay} activeOpacity={1} onPress={closeShareModal} />
           <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }} keyboardShouldPersistTaps="handled">
-            <View style={[dynamicStyles.shareCard, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+            <View style={[dynamicStyles.shareCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={dynamicStyles.header}>
                 <View>
                   <Text style={dynamicStyles.title}>Chia sẻ thẻ Material</Text>
@@ -529,7 +566,7 @@ export default function VocabularyManager({
             {/* ACTION BAR */}
             <View style={styles.row}>
               <Text style={dynamicStyles.sectionTitle}>
-                Danh sách flashcards
+                Danh sách từ vựng
               </Text>
 
               <TouchableOpacity
@@ -544,22 +581,30 @@ export default function VocabularyManager({
             <View style={dynamicStyles.line} />
 
             {/* LIST */}
-            <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
+            <View style={{ flex: 1, paddingBottom: 20 }}>
               {loading ? (
                 <Text style={dynamicStyles.empty}>Đang tải...</Text>
               ) : items.length === 0 ? (
                 <Text style={dynamicStyles.empty}>Chưa có từ vựng</Text>
               ) : (
-                items.map((card) => (
-                  <VocabularyItem
-                    key={card.id}
-                    card={card}
-                    onEdit={() => openEditor(card)}
-                    onDelete={() => handleDeleteCard(card.id)}
-                  />
-                ))
+                <FlatList
+                  data={items}
+                  keyExtractor={(item) => item.id.toString()}
+                  renderItem={({ item }) => (
+                    <VocabularyItem
+                      card={item}
+                      onEdit={() => openEditor(item)}
+                      onDelete={() => handleDeleteCard(item.id)}
+                    />
+                  )}
+                  initialNumToRender={10}
+                  maxToRenderPerBatch={10}
+                  windowSize={5}
+                  contentContainerStyle={{ paddingBottom: 80 }}
+                  showsVerticalScrollIndicator={false}
+                />
               )}
-            </ScrollView>
+            </View>
           </Animated.View>
         </View>
       </Modal>

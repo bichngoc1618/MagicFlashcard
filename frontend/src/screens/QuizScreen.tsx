@@ -11,6 +11,7 @@ import ResultScreen from '../components/quiz/ResultScreen';
 import type { QuizType } from '../components/quiz/types';
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useGlobalUI } from '../context/GlobalUIContext';
 import { completeQuizSession, syncStudy } from '../api/api';
 import DuoHearts from '../components/quiz/DuoHearts';
 import useQuizScreen from './useQuizScreen';
@@ -30,6 +31,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
+  const { showAlert } = useGlobalUI();
 
   // 🛡️ STATE TIM CỤC BỘ: Cách ly hoàn toàn khỏi AuthContext để chặn đứng lỗi tự động back app
   const [localHearts, setLocalHearts] = React.useState<number>(globalHearts);
@@ -158,27 +160,31 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   // Bộ lắng nghe chặn thao tác vuốt cạnh/bấm nút Back vật lý khi đang làm bài
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      if (localShowResult) {
-        e.preventDefault();
-        executeExitWrapperRef.current();
+      if (navigationBlocked) {
         return;
       }
 
-      if (!navigationBlocked) {
-        e.preventDefault();
-        Alert.alert(
+      e.preventDefault();
+
+      if (localShowResult) {
+        setNavigationBlocked(true);
+        executeExitWrapperRef.current();
+      } else {
+        showAlert(
           'Thoát bài test',
           'Bài test có thể không được lưu, bạn có muốn thoát?',
           [
             { text: 'Hủy', style: 'cancel' },
             { 
               text: 'Thoát', 
+              style: 'destructive',
               onPress: () => {
                 setNavigationBlocked(true);
-                navigation.dispatch(e.data.action);
+                executeExitWrapperRef.current();
               } 
             },
-          ]
+          ],
+          'warning'
         );
       }
     });
@@ -280,7 +286,10 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         } catch (err) {
           console.warn('Failed to update streak before exit:', err);
         } finally {
-          navigation.navigate('StudyJourney' as any, params);
+          navigation.navigate('MainTabs' as any, {
+            screen: 'StudyJourney',
+            params: params,
+          });
         }
       })();
     } catch (err) {
@@ -299,7 +308,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
 
   if (isLoading) return <QuizLoadingState />;
   if (loadError) return <QuizErrorState error={loadError} onRetry={reloadQuiz} />;
-  if (questions.length === 0) return <QuizNoQuestionsState onGoBack={handleCancel} />;
+  if (questions.length === 0) return <QuizNoQuestionsState onGoBack={executeExitWrapper} />;
 
   const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
   const themeShadowColor = isDark ? '#193D32' : '#275245';
@@ -316,6 +325,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
           isBoss={isBoss}
           onRetry={executeRetryWrapper} 
           onContinue={executeExitWrapper} 
+          onExit={executeExitWrapper}
           canContinue={canContinue}
           showStreakCelebration={currentNodeIndex === 0}
         />
@@ -346,10 +356,8 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
 
   return (
     <>
-      <View style={styles.heartOverlay}> 
-        <DuoHearts hearts={localHearts} />
-      </View>
       <QuizUI
+        hearts={localHearts}
         activeType={activeType!}
         currentWord={currentWord!}
         stepProgress={stepProgress}
@@ -383,7 +391,10 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         pairAssignments={pairAssignments}
         isSubmitting={isSubmitting}
         
-        onCancel={showResult || localShowResult ? () => console.warn('🛑 Chặn hủy tự phát.') : handleCancel}
+        onCancel={showResult || localShowResult ? () => console.warn('🛑 Chặn hủy tự phát.') : () => {
+          // Kích hoạt beforeRemove để hiện popup xác nhận thoát
+          navigation.navigate('MainTabs' as any, { screen: 'StudyJourney', params: { materialId } });
+        }}
         onCheckInputAnswer={checkInputAnswer}
         onVerifyScrambled={verifyScrambled}
         onHandleChoiceAnswer={handleChoiceAnswer}
@@ -590,5 +601,4 @@ const modalStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  heartOverlay: { position: 'absolute', right: 16, top: Platform.OS === 'ios' ? 56 : 16, zIndex: 99 },
 });

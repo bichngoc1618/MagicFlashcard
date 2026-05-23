@@ -73,11 +73,26 @@ function AnimatedTab({
 
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
-export default function BottomNavigation({ state, navigation: tabNavigation }: BottomTabBarProps) {
+export default function BottomNavigation(props: any) {
+  const { state, navigation: tabNavigation, activeTab } = props;
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
 
-  const activeRouteName = state ? state.routes[state.index].name : '';
+  const globalNavigation = useNavigation<any>();
+
+  const activeRouteName = state ? state.routes[state.index].name : 
+                          activeTab === 'study' ? 'Study' :
+                          activeTab === 'profile' ? 'Profile' : 
+                          activeTab === 'home' ? 'Home' : 
+                          activeTab === 'SpeakingPractice' ? 'SpeakingPractice' : '';
+
+  const handleNavigate = (screenName: string, params?: any) => {
+    if (tabNavigation) {
+      tabNavigation.navigate(screenName, params);
+    } else {
+      globalNavigation.navigate('MainTabs', { screen: screenName, params });
+    }
+  };
 
   // Ép đồng bộ bộ màu sắc tố đậm lục bảo thống nhất của hệ thống
   const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
@@ -117,7 +132,7 @@ export default function BottomNavigation({ state, navigation: tabNavigation }: B
           label="Trang chủ"
           icon={<Home size={18} color={activeRouteName === 'Home' ? themePrimaryColor : colors.textSecondary} />}
           active={activeRouteName === 'Home'}
-          onPress={() => tabNavigation.navigate('Home')}
+          onPress={() => handleNavigate('Home')}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />
@@ -126,7 +141,7 @@ export default function BottomNavigation({ state, navigation: tabNavigation }: B
           label="Hành trình"
           icon={<BookOpenText size={18} color={activeRouteName === 'StudyJourney' ? themePrimaryColor : colors.textSecondary} />}
           active={activeRouteName === 'StudyJourney'}
-          onPress={() => tabNavigation.navigate('StudyJourney', { materialId: 1 })}
+          onPress={() => handleNavigate('StudyJourney', { materialId: 1 })}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />
@@ -135,7 +150,7 @@ export default function BottomNavigation({ state, navigation: tabNavigation }: B
           label="Luyện nói"
           icon={<Mic2 size={18} color={activeRouteName === 'SpeakingPractice' ? themePrimaryColor : colors.textSecondary} />}
           active={activeRouteName === 'SpeakingPractice'}
-          onPress={() => tabNavigation.navigate('SpeakingPractice')}
+          onPress={() => handleNavigate('SpeakingPractice')}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />
@@ -144,7 +159,7 @@ export default function BottomNavigation({ state, navigation: tabNavigation }: B
           label="Thư viện"
           icon={<Library size={18} color={activeRouteName === 'Study' ? themePrimaryColor : colors.textSecondary} />}
           active={activeRouteName === 'Study'}
-          onPress={() => tabNavigation.navigate('Study')}
+          onPress={() => handleNavigate('Study')}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />
@@ -153,7 +168,7 @@ export default function BottomNavigation({ state, navigation: tabNavigation }: B
           label="Cá nhân"
           icon={<UserRound size={18} color={activeRouteName === 'Profile' ? themePrimaryColor : colors.textSecondary} />}
           active={activeRouteName === 'Profile'}
-          onPress={() => tabNavigation.navigate('Profile')}
+          onPress={() => handleNavigate('Profile')}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />

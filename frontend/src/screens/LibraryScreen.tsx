@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ActivityIndicator,
   StyleSheet,
   Platform,
   Modal,
@@ -36,6 +35,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import BottomNavigation from '../components/BottomNavigation';
 import AppHeaderSearch from '../components/AppHeaderSearch';
 import VocabularyManager from '../components/VocabularyManager';
+import SharkLoader from '../components/ui/SharkLoader';
 import { getMaterials, getUserStats, createMaterial } from '../api/api';
 
 type StudyScreenProps = StackScreenProps<RootStackParamList, 'Study'>;
@@ -172,7 +172,7 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
   if (isLoading) {
     return (
       <View style={[styles.loadingCenter, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <SharkLoader size="small" message="" />
         <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Đang tải lộ trình học...</Text>
       </View>
     );
@@ -280,6 +280,7 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
               isDone={activeTab === 'completed'}
               isDark={isDark}
               colors={colors}
+              onMaterialDeleted={loadData}
               onPress={() =>
                 navigation.navigate('StudyJourney', { materialId: Number(card.id) })
               }
@@ -368,7 +369,7 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
 }
 
 /* ================= STUDY CARD ITEM ĐỒNG BỘ FLAT & ĐẬM MÀU ================= */
-function StudyCardItem({ card, onPress, isDone, isDark, colors }: any) {
+function StudyCardItem({ card, onPress, isDone, isDark, colors, onMaterialDeleted }: any) {
   const progressPercent = Math.round(card.progress * 100);
   const nodePalette = useMemo(() => getMaterialColorStyle(card.title, isDark), [card.title, isDark]);
 
@@ -418,6 +419,7 @@ function StudyCardItem({ card, onPress, isDone, isDark, colors }: any) {
             <VocabularyManager
               materialId={Number(card.id)}
               materialTitle={card.title}
+              onMaterialDeleted={onMaterialDeleted}
             />
           </View>
         </View>

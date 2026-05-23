@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { X } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
+import DuoHearts from './DuoHearts';
 import type { QuizType } from './types';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -12,6 +13,7 @@ type QuizHeaderProps = {
   questionIndex: number;
   totalQuestionCount: number;
   remainingSeconds: number;
+  hearts: number;
   onCancel: () => void;
 };
 
@@ -22,6 +24,7 @@ export default function QuizHeader({
   questionIndex,
   totalQuestionCount,
   remainingSeconds,
+  hearts,
   onCancel,
 }: QuizHeaderProps) {
   const { colors } = useTheme();
@@ -42,6 +45,7 @@ export default function QuizHeader({
       <View style={[styles.progressBar, { backgroundColor: colors.border }] }>
         <View style={[styles.progressFill, { width: `${stepProgress}%`, backgroundColor: colors.primary }]} />
       </View>
+      <DuoHearts hearts={hearts} />
       <View style={styles.timerCircleContainer}>
         <Svg width={44} height={44}>
           <Circle cx={22} cy={22} r={radius} stroke={colors.border} strokeWidth={strokeWidth} fill="transparent" />

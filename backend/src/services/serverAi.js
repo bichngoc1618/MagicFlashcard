@@ -1,6 +1,7 @@
 import express from "express";
 import multer from "multer";
 import axios from "axios";
+import FormData from "form-data";
 import dotenv from "dotenv";
 import { exec } from "child_process";
 import path from "path";
@@ -71,8 +72,25 @@ router.post("/speak", upload.single("file"), async (req, res) => {
         const audioPath = path.resolve(req.file.path);
         const userId = req.body?.userId ? Number(req.body.userId) : null;
 
-        exec(`python whisper.py "${audioPath}"`, async (err, stdout) => {
-            let rawText = stdout?.trim() || "";
+        const originalName = req.file.originalname || 'audio.webm';
+        const ext = path.extname(originalName) || (originalName.endsWith('.m4a') ? '.m4a' : '.webm');
+        const filename = `audio${ext}`;
+
+        const formData = new FormData();
+        formData.append("file", fs.createReadStream(audioPath), { filename: filename, contentType: req.file.mimetype || 'audio/webm' });
+        formData.append("model", "whisper-large-v3-turbo");
+        formData.append("response_format", "json");
+        formData.append("language", "ja");
+
+        try {
+            const transcriptionRes = await axios.post("https://api.groq.com/openai/v1/audio/transcriptions", formData, {
+                headers: {
+                    ...formData.getHeaders(),
+                    Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+                },
+            });
+            let rawText = transcriptionRes.data?.text?.trim() || "";
+
             if (!rawText) {
                 if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
                 return res.json({
@@ -93,8 +111,19 @@ router.post("/speak", upload.single("file"), async (req, res) => {
                 userCorrected: correctedText,
                 aiReply: aiReply
             });
-        });
-    } catch (err) { res.status(500).json({ error: "Server error" }); }
+        } catch (transcriptionErr) {
+            console.error("Lỗi Groq Whisper API:", transcriptionErr?.response?.data || transcriptionErr.message);
+            if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+            return res.json({
+                userOriginal: "",
+                userCorrected: "",
+                aiReply: "聞こえないよ！もう一度言ってね？ | Mình không nghe rõ, nói lại nhé?"
+            });
+        }
+    } catch (err) { 
+        console.error("Server Error in /speak:", err);
+        res.status(500).json({ error: "Server error" }); 
+    }
 });
 
 // API 2: Text

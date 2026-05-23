@@ -6,11 +6,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useGlobalUI } from '../context/GlobalUIContext';
+import SharkLoader from '../components/ui/SharkLoader';
 import { User, Mail, Lock, UserPlus, ArrowLeft } from 'lucide-react-native';
 
 export default function RegisterScreen({ navigation }: any) {
   const { register } = useAuthContext();
   const { colors } = useTheme();
+  const { showAlert } = useGlobalUI();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,7 +23,7 @@ export default function RegisterScreen({ navigation }: any) {
 
   const handleRegister = async () => {
     if (!username.trim() || !email.trim() || !password) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng điền đầy đủ username, email và mật khẩu.');
+      showAlert('Thiếu thông tin', 'Vui lòng điền đầy đủ username, email và mật khẩu.', undefined, 'warning');
       return;
     }
 
@@ -28,7 +31,7 @@ export default function RegisterScreen({ navigation }: any) {
       setIsLoading(true);
       await register(username.trim(), email.trim(), password);
     } catch (error: any) {
-      Alert.alert('Đăng ký thất bại', error.message || 'Vui lòng thử lại.');
+      showAlert('Đăng ký thất bại', error.message || 'Vui lòng thử lại.', undefined, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -190,7 +193,7 @@ export default function RegisterScreen({ navigation }: any) {
               disabled={isLoading}
             >
               {isLoading ? (
-                <ActivityIndicator color="#FFF" />
+                <SharkLoader size="small" message="" />
               ) : (
                 <View style={styles.btnContent}>
                   <Text style={styles.registerText}>Tạo tài khoản</Text>

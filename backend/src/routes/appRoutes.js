@@ -6,6 +6,7 @@ import {
   createFlashcardsBulk,
   updateFlashcard,
   deleteFlashcard,
+  deleteMaterial,
   getStudyJourney,
   seedDefaultMaterials,
   getFlashcards,
@@ -41,6 +42,7 @@ router.post('/flashcards', createFlashcard);
 router.post('/flashcards/bulk', createFlashcardsBulk);
 router.put('/flashcards/:flashcardId', updateFlashcard);
 router.delete('/flashcards/:flashcardId', deleteFlashcard);
+router.delete('/materials/:materialId', deleteMaterial);
 router.post('/materials/seed-default/:userId', seedDefaultMaterials);
 router.get('/study/journey/:materialId', getStudyJourney);
 router.get('/flashcards/:materialId', getFlashcards);

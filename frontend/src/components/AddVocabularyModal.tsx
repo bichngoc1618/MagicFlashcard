@@ -36,6 +36,8 @@ import * as XLSX from 'xlsx';
 
 import { searchDictionary } from '../api/api';
 import { useTheme } from '../context/ThemeContext';
+import { useGlobalUI } from '../context/GlobalUIContext';
+import SharkLoader from './ui/SharkLoader';
 
 /* ================= TYPES ================= */
 
@@ -87,6 +89,7 @@ export default function AddVocabularyModal({
   loading,
 }: Props) {
   const { colors } = useTheme();
+  const { showAlert, showLoader, hideLoader } = useGlobalUI();
 
   const [activeOption, setActiveOption] =
     useState<'manual' | 'excel'>(
@@ -364,11 +367,7 @@ export default function AddVocabularyModal({
         await Sharing.shareAsync(uri);
       } catch (err) {
         console.log(err);
-
-        Alert.alert(
-          'Lỗi',
-          'Không thể tạo file mẫu'
-        );
+        showAlert('Lỗi', 'Không thể tạo file mẫu', undefined, 'error');
       }
     }, []);
 
@@ -437,11 +436,7 @@ export default function AddVocabularyModal({
         !workbook.SheetNames ||
         workbook.SheetNames.length === 0
       ) {
-        Alert.alert(
-          'Lỗi định dạng',
-          'Tệp tin Excel không hợp lệ hoặc không có trang tính (Sheet) nào.'
-        );
-
+        showAlert('Lỗi định dạng', 'Tệp tin Excel không hợp lệ hoặc không có trang tính (Sheet) nào.', undefined, 'error');
         return;
       }
 
@@ -457,11 +452,7 @@ export default function AddVocabularyModal({
         );
 
       if (!sheetData || sheetData.length === 0) {
-        Alert.alert(
-          'Lỗi dữ liệu',
-          'File Excel không chứa bất kỳ hàng dữ liệu nào.'
-        );
-
+        showAlert('Lỗi dữ liệu', 'File Excel không chứa bất kỳ hàng dữ liệu nào.', undefined, 'error');
         return;
       }
 
@@ -485,21 +476,13 @@ export default function AddVocabularyModal({
       if (exampleColIndex === -1) missingColumns.push('example');
 
       if (missingColumns.length > 0) {
-        Alert.alert(
-          'Sai cấu trúc cột',
-          `File Excel thiếu các cột bắt buộc sau: ${missingColumns.map(col => `'${col}'`).join(', ')}.\n\nVui lòng đảm bảo file Excel của bạn chứa đầy đủ các cột: 'kanji', 'hiragana', 'meaning', 'example' (chấp nhận chữ hoa, chữ thường và không quan trọng thứ tự).`
-        );
-
+        showAlert('Sai cấu trúc cột', `File Excel thiếu các cột bắt buộc sau: ${missingColumns.map(col => `'${col}'`).join(', ')}.\n\nVui lòng đảm bảo file Excel của bạn chứa đầy đủ các cột: 'kanji', 'hiragana', 'meaning', 'example' (chấp nhận chữ hoa, chữ thường và không quan trọng thứ tự).`, undefined, 'warning');
         return;
       }
 
       const rowsData = sheetData.slice(1);
       if (rowsData.length === 0) {
-        Alert.alert(
-          'Lỗi dữ liệu',
-          'Không tìm thấy dòng dữ liệu từ vựng nào dưới dòng tiêu đề (Header).'
-        );
-
+        showAlert('Lỗi dữ liệu', 'Không tìm thấy dòng dữ liệu từ vựng nào dưới dòng tiêu đề (Header).', undefined, 'error');
         return;
       }
 
@@ -538,11 +521,7 @@ export default function AddVocabularyModal({
       }
 
       if (!cards.length) {
-        Alert.alert(
-          'Không có dữ liệu hợp lệ',
-          'Tất cả các dòng dữ liệu trong tệp Excel đều trống hoặc không hợp lệ.'
-        );
-
+        showAlert('Không có dữ liệu hợp lệ', 'Tất cả các dòng dữ liệu trong tệp Excel đều trống hoặc không hợp lệ.', undefined, 'warning');
         return;
       }
 
@@ -573,26 +552,15 @@ export default function AddVocabularyModal({
           uniqueCards
         );
       } catch (err: any) {
-        Alert.alert(
-          'Lỗi import',
-          `Không thể nhập từ vựng vào hệ thống. Chi tiết: ${err.message || 'Lỗi không xác định.'}`
-        );
+        showAlert('Lỗi import', `Không thể nhập từ vựng vào hệ thống. Chi tiết: ${err.message || 'Lỗi không xác định.'}`, undefined, 'error');
         return;
       }
 
-      Alert.alert(
-        'Import thành công',
-        `Đã thêm ${uniqueCards.length} flashcards mới thành công!`
-      );
-
+      showAlert('Import thành công', `Đã thêm ${uniqueCards.length} flashcards mới thành công!`, undefined, 'success');
       closeModal();
     } catch (err: any) {
       console.log(err);
-
-      Alert.alert(
-        'Lỗi đọc tệp tin',
-        `Không thể đọc dữ liệu từ file Excel này. Chi tiết: ${err.message || 'Vui lòng kiểm tra định dạng tệp tin.'}`
-      );
+      showAlert('Lỗi đọc tệp tin', `Không thể đọc dữ liệu từ file Excel này. Chi tiết: ${err.message || 'Vui lòng kiểm tra định dạng tệp tin.'}`, undefined, 'error');
     } finally {
       setIsFileLoading(false);
     }
@@ -816,7 +784,7 @@ export default function AddVocabularyModal({
                     ]}
                   >
                     {isLoadingLookup ? (
-                      <ActivityIndicator color="white" />
+                      <SharkLoader size="small" message="" />
                     ) : (
                       <>
                         <Search
@@ -990,34 +958,7 @@ export default function AddVocabularyModal({
                   ]}
                 />
                 
-                <View
-                  style={[
-                    styles.loadingAvatarCard,
-                    {
-                      borderColor: colors.border,
-                      backgroundColor: colors.background,
-                    },
-                  ]}
-                >
-                  <Image
-                    source={require('../../assets/sharkMagic.png')}
-                    style={styles.loadingAvatar}
-                    resizeMode="contain"
-                  />
-                </View>
-                <ActivityIndicator
-                  size="large"
-                  color={colors.primary}
-                  style={{ marginVertical: 16 }}
-                />
-                <Text
-                  style={[
-                    styles.loadingText,
-                    { color: colors.text },
-                  ]}
-                >
-                  Chờ một chút nhé...
-                </Text>
+                <SharkLoader message="Chờ một chút nhé..." size="large" />
               </View>
             )}
           </Animated.View>

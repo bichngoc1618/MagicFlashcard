@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState } from 'react-native';
-
+import { AppState } from 'react-native';
+import { useGlobalUI } from './GlobalUIContext';
 
 import { login as loginApi, register as registerApi, updateGamificationStats, refillHearts, getUserStats, deductHearts, getNotifications } from '../api/api';
 
@@ -47,6 +47,7 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
 
 export const AuthProvider = ({ children }: any) => {
   const [user, setUser] = useState<UserProfile | null>(null);
+  const { showAlert } = useGlobalUI();
 
   // Gamification states
   const [totalXp, setTotalXp] = useState<number>(0);
@@ -153,7 +154,7 @@ const deductHeartOnFailure = useCallback(async (): Promise<number> => {
 
   const purchaseHeartWithXP = async () => {
     if (!user || totalXp < 200) {
-      Alert.alert('Thông báo', 'Bạn không đủ 200 XP để đổi mạng!');
+      showAlert('Thông báo', 'Bạn không đủ 200 XP để đổi mạng!', undefined, 'warning');
       return;
     }
     setTotalXp((prev) => prev - 200);

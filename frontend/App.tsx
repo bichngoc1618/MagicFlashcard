@@ -4,6 +4,7 @@ import {
   DefaultTheme,
   DarkTheme
 } from '@react-navigation/native';
+import { Platform } from 'react-native';
 
 import { AuthProvider } from './src/context/AuthContext';
 import {
@@ -21,6 +22,36 @@ if (typeof ErrorUtils !== 'undefined') {
   });
 }
 
+const GlobalWebStyles = () => {
+  if (Platform.OS !== 'web') return null;
+  return (
+    <style type="text/css">
+      {`
+        body {
+          overscroll-behavior-y: none;
+          touch-action: pan-x pan-y;
+          -webkit-tap-highlight-color: transparent;
+        }
+        * {
+          user-select: none;
+          -webkit-user-select: none;
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        ::-webkit-scrollbar {
+          display: none;
+        }
+        input, textarea, p, h1, h2, h3, h4, h5, h6 {
+          user-select: auto;
+          -webkit-user-select: auto;
+        }
+        [role="button"], a, button {
+          cursor: pointer;
+        }
+      `}
+    </style>
+  );
+};
 
 function AppContent() {
   const { theme, colors } = useTheme();
@@ -47,6 +78,7 @@ function AppContent() {
   return (
     <AuthProvider>
       <NavigationContainer theme={navTheme}>
+        <GlobalWebStyles />
         <AppNavigator />
         <StatusBar
           style={theme === 'light'
@@ -58,10 +90,14 @@ function AppContent() {
   );
 }
 
+import { GlobalUIProvider } from './src/context/GlobalUIContext';
+
 export default function App() {
   return (
     <ThemeProvider>
-      <AppContent />
+      <GlobalUIProvider>
+        <AppContent />
+      </GlobalUIProvider>
     </ThemeProvider>
   );
 }

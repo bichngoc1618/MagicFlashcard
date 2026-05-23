@@ -8,6 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
+import { useGlobalUI } from '../../context/GlobalUIContext';
 import { CheckCircle2, AlertCircle, RefreshCw, ArrowRight } from 'lucide-react-native';
 import type { QuizType, QuizWord } from './types';
 
@@ -82,6 +83,7 @@ export default function QuizFooter({
   const [countdown, setCountdown] = useState<number | null>(null);
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
+  const { showAlert } = useGlobalUI();
 
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const intervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
@@ -167,10 +169,11 @@ export default function QuizFooter({
 
   useEffect(() => {
     if (shouldShowRetryModal && !hasShownRetryAlert) {
-      Alert.alert(
+      showAlert(
         'Cần làm lại',
         'Bạn cần đạt ít nhất 80% ở đợt 1 để tiếp tục. Vui lòng làm lại đợt này.',
-        [{ text: 'OK', onPress: () => setHasShownRetryAlert(true) }]
+        [{ text: 'OK', onPress: () => setHasShownRetryAlert(true) }],
+        'warning'
       );
     }
 

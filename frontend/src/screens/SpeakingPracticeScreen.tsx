@@ -1,10 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  Image, 
-  TouchableOpacity, 
-  ActivityIndicator, 
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
   StyleSheet,
   ScrollView,
   TextInput,
@@ -21,6 +20,7 @@ import { getChatHistory, clearChatHistory, speakText, speakAudio } from '../api/
 import { speakTextToSpeech } from '../utils/tts';
 import BottomNavigation from '../components/BottomNavigation';
 import { useTheme } from '../context/ThemeContext';
+import SharkLoader from '../components/ui/SharkLoader';
 
 interface Message {
   id: number;
@@ -37,7 +37,7 @@ export default function SpeakingPracticeScreen() {
   const [speechRate, setSpeechRate] = useState<number>(0.85);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  
+
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const webMediaRecorderRef = useRef<any>(null);
@@ -143,8 +143,7 @@ export default function SpeakingPracticeScreen() {
       if (Platform.OS === 'web') {
         const response = await fetch(uri);
         const blob = await response.blob();
-        const file = new File([blob], 'recording.wav', { type: blob.type || 'audio/wav' });
-        formData.append('file', file);
+        formData.append('file', blob, 'recording.webm');
       } else {
         // @ts-ignore
         formData.append('file', { uri, type: 'audio/m4a', name: 'recording.m4a' });
@@ -183,7 +182,7 @@ export default function SpeakingPracticeScreen() {
         };
 
         mediaRecorder.onstop = () => {
-          const audioBlob = new Blob(webAudioChunksRef.current, { type: 'audio/wav' });
+          const audioBlob = new Blob(webAudioChunksRef.current, { type: 'audio/webm' });
           const audioUrl = URL.createObjectURL(audioBlob);
           handleVoiceChatWithAI(audioUrl);
           stream.getTracks().forEach(track => track.stop());
@@ -231,12 +230,12 @@ export default function SpeakingPracticeScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
         {/* HEADER ĐỒNG BỘ */}
-        <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: isDark ? '#1E293B' : '#F1F5F9' }]}> 
+        <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
           <View>
             <Text style={[styles.screenTitle, { color: colors.text }]}>Luyện nói cùng サメ</Text>
             <View style={styles.statusBadge}>
@@ -272,14 +271,14 @@ export default function SpeakingPracticeScreen() {
             <TouchableOpacity style={styles.settingsItem} onPress={confirmClearConversation}>
               <Text style={[styles.settingsItemLabel, { color: colors.danger || '#FF4B4B' }]}>Xóa lịch sử chat</Text>
             </TouchableOpacity>
-            <Text style={[styles.settingsFooter, { color: colors.textSecondary }]}>Tốc độ hiện tại: {getSpeechSpeedLabel()}</Text>
+            {/* <Text style={[styles.settingsFooter, { color: colors.textSecondary }]}>Tốc độ hiện tại: {getSpeechSpeedLabel()}</Text> */}
           </View>
         )}
 
         {/* MODAL XÁC NHẬN XÓA LỊCH SỬ CHAT ĐỒNG BỘ POPUP HOME */}
         <Modal visible={showClearConfirm} transparent animationType="fade" onRequestClose={() => setShowClearConfirm(false)}>
           <View style={styles.confirmOverlay}>
-            <View style={[styles.confirmBox, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}> 
+            <View style={[styles.confirmBox, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
               <Text style={[styles.confirmTitle, { color: colors.text }]}>Bạn có chắc chắn?</Text>
               <Text style={[styles.confirmMessage, { color: colors.textSecondary }]}>Hành động này sẽ xóa toàn bộ lịch sử chat của bạn.</Text>
               <View style={styles.confirmActions}>
@@ -295,8 +294,8 @@ export default function SpeakingPracticeScreen() {
         </Modal>
 
         {/* KHÔNG GIAN CUỘN TIN NHẮN */}
-        <ScrollView 
-          style={[styles.chatContainer, { backgroundColor: colors.background }]} 
+        <ScrollView
+          style={[styles.chatContainer, { backgroundColor: colors.background }]}
           ref={scrollViewRef}
           onContentSizeChange={scrollToBottom}
           showsVerticalScrollIndicator={false}
@@ -307,8 +306,8 @@ export default function SpeakingPracticeScreen() {
               {msg.sender === 'ai' && (
                 <Image source={require('../../assets/speak.png')} style={[styles.miniMascot, { backgroundColor: isDark ? 'rgba(59, 122, 102, 0.15)' : '#E9FBF5' }]} />
               )}
-              <TouchableOpacity 
-                activeOpacity={0.9} 
+              <TouchableOpacity
+                activeOpacity={0.9}
                 style={[
                   styles.chatBox,
                   msg.sender === 'user' ? [styles.userBox, { backgroundColor: themePrimaryColor }] : [styles.aiBox, { backgroundColor: colors.card }],
@@ -322,21 +321,21 @@ export default function SpeakingPracticeScreen() {
               </TouchableOpacity>
             </View>
           ))}
-          
+
           {isLoadingAI && (
             <View style={styles.aiRow}>
               <Image source={require('../../assets/speak.png')} style={[styles.miniMascot, { backgroundColor: isDark ? 'rgba(59, 122, 102, 0.15)' : '#E9FBF5' }]} />
-              <View style={[styles.chatBox, styles.aiBox, styles.loadingBox, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}> 
-                <ActivityIndicator size="small" color={themePrimaryColor} />
+              <View style={[styles.chatBox, styles.aiBox, styles.loadingBox, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
+                <SharkLoader size="small" message="" />
               </View>
             </View>
           )}
         </ScrollView>
 
         {/* INPUT KHU VỰC NHẬP LIỆU VÀ MICRO CAPSULE CHUẨN FLAT */}
-        <View style={[styles.inputArea, { backgroundColor: colors.card, borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}> 
-          <View style={[styles.inputContainer, { backgroundColor: colors.background, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}> 
-            <TextInput 
+        <View style={[styles.inputArea, { backgroundColor: colors.card, borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
+          <View style={[styles.inputContainer, { backgroundColor: colors.background, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
+            <TextInput
               style={[styles.textInput, { color: colors.text }]}
               placeholder="Nhập tin nhắn..."
               placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
@@ -344,9 +343,9 @@ export default function SpeakingPracticeScreen() {
               onChangeText={setInputText}
               multiline={false}
             />
-            
+
             {inputText.length > 0 ? (
-              <TouchableOpacity onPress={handleSendText} style={[styles.actionBtn, { backgroundColor: themePrimaryColor }]}> 
+              <TouchableOpacity onPress={handleSendText} style={[styles.actionBtn, { backgroundColor: themePrimaryColor }]}>
                 <Ionicons name="send" size={16} color="#fff" />
               </TouchableOpacity>
             ) : (
@@ -359,7 +358,7 @@ export default function SpeakingPracticeScreen() {
               </TouchableOpacity>
             )}
           </View>
-          <Text style={[styles.hintText, { color: colors.textSecondary }]}> 
+          <Text style={[styles.hintText, { color: colors.textSecondary }]}>
             {isListening ? "Đang lắng nghe..." : "Giữ Mic để nói tiếng Nhật"}
           </Text>
         </View>

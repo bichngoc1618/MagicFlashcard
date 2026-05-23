@@ -7,8 +7,9 @@ import { Flame, Heart } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import ScreenContainer from '../ScreenContainer';
 import { useTheme } from '../../context/ThemeContext';
-import { useAuthContext } from '../../context/AuthContext';
 import { speakTextToSpeech } from '../../utils/tts';
+import { useAuthContext } from '../../context/AuthContext';
+import { useGlobalUI } from '../../context/GlobalUIContext';
 import type { AnswerRecord } from './types';
 
 const { width } = Dimensions.get('window');
@@ -213,6 +214,7 @@ interface ResultScreenProps {
   onContinue: () => void;
   canContinue: boolean;
   showStreakCelebration?: boolean;
+  onExit?: () => void;
 }
 
 export default function ResultScreen({
@@ -226,6 +228,7 @@ export default function ResultScreen({
   onContinue,
   canContinue,
   showStreakCelebration = false,
+  onExit,
 }: ResultScreenProps) {
   const authContext = useAuthContext();
   const streakCount = authContext?.streakCount ?? 0;
@@ -234,6 +237,7 @@ export default function ResultScreen({
   const [showCelebration, setShowCelebration] = useState(false);
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
+  const { showAlert } = useGlobalUI();
 
   const failedAnswers = answers.filter((ans) => !ans.isCorrect);
   const displayedScore = displayScore ?? score;
@@ -263,7 +267,7 @@ export default function ResultScreen({
 
   const handleShowFailed = () => {
     if (failedAnswers.length === 0) {
-      Alert.alert('Thông báo 🎉', 'Tuyệt vời! Bạn đã trả lời đúng tất cả các câu hỏi.');
+      showAlert('Thông báo 🎉', 'Tuyệt vời! Bạn đã trả lời đúng tất cả các câu hỏi.', undefined, 'success');
       return;
     }
     setShowingFailed(true);
@@ -358,6 +362,24 @@ export default function ResultScreen({
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.centerWrapper}>
+          {/* Nút Back về trang hành trình */}
+          {onExit && (
+            <TouchableOpacity
+              onPress={onExit}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                zIndex: 10,
+                padding: 10,
+                backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                borderRadius: 12,
+              }}
+            >
+              <ArrowLeft size={20} color={colors.text} />
+            </TouchableOpacity>
+          )}
+
           {showConfetti && (
             <View style={styles.confettiAbsoluteWrapper}>
               <ConfettiCannon

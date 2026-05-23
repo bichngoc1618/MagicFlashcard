@@ -10,9 +10,21 @@ export const register = async (req, res) => {
       return res.status(400).json({ error: 'Vui lòng cung cấp username, email và password.' });
     }
 
-    const [existing] = await db.query('SELECT id FROM users WHERE email = ? OR username = ?', [email, username]);
+    const [existing] = await db.query('SELECT username, email FROM users WHERE email = ? OR username = ?', [email, username]);
     if (existing.length > 0) {
-      return res.status(409).json({ error: 'Tài khoản đã tồn tại.' });
+      const match = existing[0];
+      const matchUsername = match.username.toLowerCase();
+      const inputUsername = username.toLowerCase();
+      const matchEmail = match.email.toLowerCase();
+      const inputEmail = email.toLowerCase();
+      
+      if (matchUsername === inputUsername && matchEmail === inputEmail) {
+        return res.status(409).json({ error: 'Tên người dùng và Email này đều đã được sử dụng.' });
+      } else if (matchUsername === inputUsername) {
+        return res.status(409).json({ error: 'Tên người dùng (Username) này đã có người sử dụng. Vui lòng chọn tên khác.' });
+      } else {
+        return res.status(409).json({ error: 'Email này đã được đăng ký cho một tài khoản khác.' });
+      }
     }
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);

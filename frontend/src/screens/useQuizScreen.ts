@@ -324,10 +324,14 @@ export default function useQuizScreen({
     return buildQuizQuestions(batchWords, effectiveQuizType, batchIndex);
   }, [batchWords, effectiveQuizType, batchIndex, nodeType]);
 
+  // Debug: Log the number of generated questions and the effective quiz type
+  // console.log('[useQuizScreen] effectiveQuizType:', effectiveQuizType, 'questions count:', questions?.length);
+
+  // Initialize quiz progress only once when component mounts
   useEffect(() => {
     setCurrentIndex(0);
     setAnswers([]);
-  }, [questions]);
+  }, []);
 
   useEffect(() => {
     clearAutoNextTimer();
@@ -345,6 +349,7 @@ export default function useQuizScreen({
     setIsTimeUp(false);
     setHasSubmitted(false);
     setSelectedAnswer(null);
+    // Reset timer for the new question but preserve auto‑next countdown handling
     setTimerSeconds(getTimerForType(effectiveQuizType));
     setFeedbackMessage(null);
     setIsSubmitting(false);

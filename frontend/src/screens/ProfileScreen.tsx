@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import SharkLoader from '../components/ui/SharkLoader';
 import {
-  ActivityIndicator,
   Dimensions,
   ScrollView,
   StyleSheet,
@@ -8,6 +8,7 @@ import {
   View,
   Platform,
   Image,
+  TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { StackScreenProps } from '@react-navigation/stack';
@@ -20,12 +21,15 @@ import {
   Flame,
   CheckCircle2,
   Calendar,
-  Layers
+  Layers,
+  LogOut,
+  ArrowLeft
 } from 'lucide-react-native';
 import * as Progress from 'react-native-progress';
 import { PieChart } from 'react-native-chart-kit';
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useGlobalUI } from '../context/GlobalUIContext';
 import type { RootStackParamList } from '../components/AppNavigator';
 import ScreenContainer from '../components/ScreenContainer';
 import BottomNavigation from '../components/BottomNavigation';
@@ -92,11 +96,19 @@ async function fetchProfileData(userId: number): Promise<ProfileData> {
 }
 
 export default function ProfileScreen({ navigation }: ProfileScreenProps) {
-  const { user } = useAuthContext();
+  const { user, logout } = useAuthContext();
   const { colors, theme } = useTheme();
+  const { showAlert } = useGlobalUI();
   const isDark = theme === 'dark';
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [isReady, setIsReady] = useState(false);
+
+  const handleLogout = () => {
+    showAlert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng không?', [
+      { text: 'Hủy', style: 'cancel' },
+      { text: 'Đăng xuất', style: 'destructive', onPress: logout }
+    ], 'warning');
+  };
 
   const levelInfo = useMemo(() => calculateLevelInfo(profileData?.totalXP ?? 0), [profileData?.totalXP]);
   const persona = useMemo(() => getPersona(profileData?.totalXP ?? 0, profileData?.averageAccuracy ?? 0), [profileData]);
@@ -212,10 +224,33 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
   return (
     <ScreenContainer>
+      {/* Header */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.background, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {/* <TouchableOpacity
+            onPress={() => {
+              if (navigation.canGoBack()) navigation.goBack();
+              else navigation.navigate('MainTabs' as any);
+            }}
+            style={{ padding: 8, marginRight: 12, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderRadius: 12 }}
+          >
+            <ArrowLeft size={20} color={colors.text} />
+          </TouchableOpacity> */}
+          <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text, letterSpacing: -0.5 }}>Hồ sơ</Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={handleLogout}
+          style={{ padding: 8, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderRadius: 12 }}
+        >
+          <LogOut size={20} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={dynamicStyles.scrollContent} bounces={false}>
         {!isReady ? (
           <View style={dynamicStyles.loaderContainer}>
-            <ActivityIndicator color={themePrimaryColor} size="large" />
+            <SharkLoader size="small" message="" />
           </View>
         ) : (
           <>
