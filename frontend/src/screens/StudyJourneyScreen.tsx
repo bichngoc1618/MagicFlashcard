@@ -575,10 +575,8 @@ export default function StudyJourneyScreen({
         currentActiveNodeIndex,
       };
 
-      InteractionManager.runAfterInteractions(() => {
-        setJourneyData(data);
-        setIsLoading(false);
-      });
+      setJourneyData(data);
+      setIsLoading(false);
     } catch (e) {
       console.error(e);
       setIsLoading(false);
