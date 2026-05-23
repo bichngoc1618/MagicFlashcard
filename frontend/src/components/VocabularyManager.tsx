@@ -340,50 +340,60 @@ export default function VocabularyManager({
     },
     sheet: {
       backgroundColor: colors.card,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      padding: 20,
-      minHeight: 400,
-      maxHeight: '85%',
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      paddingBottom: 40,
+      minHeight: '92%',
+      maxHeight: '95%',
+      flex: 1,
     },
     header: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      marginBottom: 15,
+      paddingHorizontal: 20,
+      paddingTop: 8,
+      paddingBottom: 16,
       alignItems: 'center',
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
     },
     title: {
-      fontSize: 18,
-      fontWeight: '700',
+      fontSize: 17,
+      fontWeight: '800',
       color: colors.text,
+      letterSpacing: -0.3,
     },
     subtitle: {
       fontSize: 12,
       color: colors.textSecondary,
+      marginTop: 2,
     },
     sectionTitle: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: colors.text,
+      fontSize: 14,
+      fontWeight: '700',
+      color: colors.textSecondary,
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
     },
     addBtn: {
       backgroundColor: colors.primary,
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 9,
+      borderRadius: 14,
       gap: 6,
     },
     addText: {
       color: 'white',
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: 13,
+      fontWeight: '700',
     },
     line: {
       height: 1,
       backgroundColor: colors.border,
-      marginVertical: 15,
+      marginVertical: 12,
+      marginHorizontal: 20,
     },
     empty: {
       textAlign: 'center',
@@ -638,32 +648,59 @@ export default function VocabularyManager({
               { transform: [{ translateY: slideAnim }] },
             ]}
           >
+            {/* DRAG HANDLE */}
+            <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 4 }}>
+              <View style={{
+                width: 40, height: 4, borderRadius: 100,
+                backgroundColor: colors.border,
+              }} />
+            </View>
+
             {/* HEADER */}
             <View style={dynamicStyles.header}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={dynamicStyles.title}>Quản lý từ vựng</Text>
                 {materialTitle ? (
-                  <Text style={dynamicStyles.subtitle}>{materialTitle}</Text>
+                  <Text style={dynamicStyles.subtitle} numberOfLines={1}>{materialTitle}</Text>
                 ) : null}
               </View>
 
-              <TouchableOpacity onPress={closeSheet}>
-                <X size={20} color={colors.primary} />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                {/* Badge số thẻ */}
+                <View style={{
+                  backgroundColor: colors.primary + '18',
+                  paddingHorizontal: 10, paddingVertical: 4,
+                  borderRadius: 99,
+                }}>
+                  <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
+                    {items.length} thẻ
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={closeSheet}
+                  style={{
+                    width: 32, height: 32, borderRadius: 99,
+                    backgroundColor: colors.border + '88',
+                    alignItems: 'center', justifyContent: 'center'
+                  }}
+                >
+                  <X size={16} color={colors.text} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* ACTION BAR */}
-            <View style={styles.row}>
+            <View style={[styles.row, { paddingHorizontal: 20, paddingVertical: 12 }]}>
               <Text style={dynamicStyles.sectionTitle}>
-                Danh sách từ vựng
+                Danh sách
               </Text>
 
               <TouchableOpacity
                 style={dynamicStyles.addBtn}
                 onPress={() => openEditor()}
               >
-                <Plus size={16} color="white" />
-                <Text style={dynamicStyles.addText}>Thêm</Text>
+                <Plus size={15} color="white" />
+                <Text style={dynamicStyles.addText}>Thêm từ</Text>
               </TouchableOpacity>
             </View>
 
@@ -672,9 +709,22 @@ export default function VocabularyManager({
             {/* LIST */}
             <View style={{ flex: 1, paddingBottom: 20 }}>
               {loading ? (
-                <Text style={dynamicStyles.empty}>Đang tải...</Text>
+                <Text style={[dynamicStyles.empty, { marginTop: 40 }]}>Đang tải...</Text>
               ) : items.length === 0 ? (
-                <Text style={dynamicStyles.empty}>Chưa có từ vựng</Text>
+                <View style={{ alignItems: 'center', paddingTop: 40, paddingHorizontal: 20 }}>
+                  <Text style={{ fontSize: 40, marginBottom: 12 }}>📭</Text>
+                  <Text style={[dynamicStyles.title, { fontSize: 15 }]}>Chưa có từ vựng</Text>
+                  <Text style={[dynamicStyles.subtitle, { textAlign: 'center', marginTop: 6 }]}>
+                    Bấm "Thêm từ" để bắt đầu xây dựng bộ thẻ!
+                  </Text>
+                  <TouchableOpacity
+                    style={[dynamicStyles.addBtn, { marginTop: 20, paddingHorizontal: 24, paddingVertical: 12 }]}
+                    onPress={() => openEditor()}
+                  >
+                    <Plus size={16} color="white" />
+                    <Text style={dynamicStyles.addText}>Thêm từ đầu tiên</Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
                 <FlatList
                   data={items}
@@ -686,10 +736,10 @@ export default function VocabularyManager({
                       onDelete={() => handleDeleteCard(item.id)}
                     />
                   )}
-                  initialNumToRender={10}
+                  initialNumToRender={12}
                   maxToRenderPerBatch={10}
                   windowSize={5}
-                  contentContainerStyle={{ paddingBottom: 80 }}
+                  contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 80, paddingTop: 4 }}
                   showsVerticalScrollIndicator={false}
                 />
               )}
