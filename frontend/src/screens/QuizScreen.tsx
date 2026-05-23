@@ -61,6 +61,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   const batchIndex = route.params?.groupIndex ?? 0;
   const currentNodeIndex = route.params?.nodeIndex;
   const sessionId = route.params?.sessionId ? String(route.params.sessionId) : undefined;
+  const isAlreadyCompleted = route.params?.isAlreadyCompleted ?? false;
 
   const {
     isLoading,
@@ -210,6 +211,17 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
             totalQuestions: resultTotalCount,
             correctAnswers: resultCorrectCount,
           });
+
+          // NẾU LÀ NODE CUỐI CÙNG (FINAL_BOSS) VÀ CHƯA TỪNG HOÀN THÀNH: CỘNG 100XP
+          if ((nodeType === 'FINAL_BOSS' || nodeId === 'final-boss') && !isAlreadyCompleted) {
+            try {
+              // Gọi hàm cộng 100 XP lên DB
+              await authContext.updateXpAndStreakInDB(100);
+            } catch (xpErr) {
+              console.warn('Lỗi cộng 100 XP cho node cuối:', xpErr);
+            }
+          }
+
           if (!shouldRefresh) {
             await refreshUserStats();
           }
@@ -218,7 +230,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         }
       })();
     }
-  }, [localShowResult, canContinue, sessionLogged, user?.id, materialId, nodeType, nodeId, batchIndex, resultTotalCount, resultCorrectCount, refreshUserStats]);
+  }, [localShowResult, canContinue, sessionLogged, user?.id, materialId, nodeType, nodeId, batchIndex, resultTotalCount, resultCorrectCount, refreshUserStats, authContext]);
 
   // Cập nhật tính toán Chuỗi Lửa Streak hàng ngày
   React.useEffect(() => {
@@ -322,7 +334,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
           correctCount={resultCorrectCount}
           totalCount={resultTotalCount}
           answers={answers}
-          isBoss={isBoss}
+          isBoss={isBoss && !isAlreadyCompleted}
           onRetry={executeRetryWrapper} 
           onContinue={executeExitWrapper} 
           onExit={executeExitWrapper}
@@ -406,6 +418,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         onChangeInput={setInputValue}
         onSelectOption={setSelectedOption}
         onPressTile={(tileId) => {
+          if (currentWord && chosenTileIds.length >= currentWord.hiragana.length) return;
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
           setChosenTileIds((prev: string[]) => [...prev, tileId]);
         }}

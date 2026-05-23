@@ -72,6 +72,7 @@ export default function FlashcardScreen({ navigation, route }: Props) {
             kanji: card.kanji || card.word || '',
             hiragana: card.hiragana || card.reading || card.word || '',
             meaning: card.meaning || '',
+            example: card.example || '',
             is_learned: card.is_learned,
           })));
         }
@@ -349,7 +350,8 @@ export default function FlashcardScreen({ navigation, route }: Props) {
                 key={currentWord.id}
                 style={[
                   styles.cardContainer, 
-                  { transform: [...position.getTranslateTransform(), { rotate }], opacity: fadeAnim, touchAction: 'pan-y' as any }
+                  { transform: [...position.getTranslateTransform(), { rotate }], opacity: fadeAnim },
+                  Platform.OS === 'web' ? ({ touchAction: 'pan-y' } as any) : {}
                 ]}
                 {...panResponder.panHandlers}
               >
@@ -369,9 +371,16 @@ export default function FlashcardScreen({ navigation, route }: Props) {
                     <View style={styles.cardLabel}>
                       <Text style={{ color: '#FFF', opacity: 0.8, fontWeight: '900', fontSize: 11, letterSpacing: 0.5 }}>CÁCH ĐỌC & NGHĨA</Text>
                     </View>
-                    <View style={{ alignItems: 'center' }}>
+                    <View style={{ alignItems: 'center', width: '100%', paddingHorizontal: 12 }}>
                       <Text style={styles.hiraganaText}>{currentWord.hiragana}</Text>
                       <Text style={styles.meaningText}>{currentWord.meaning}</Text>
+                      {currentWord.example && 
+                       currentWord.example !== 'Không có ví dụ mẫu' && 
+                       currentWord.example !== 'Không có ví dụ' ? (
+                        <View style={styles.exampleWrapper}>
+                          <Text style={styles.exampleText}>{currentWord.example}</Text>
+                        </View>
+                      ) : null}
                     </View>
                     <View style={styles.cardFooter}>
                       <TouchableOpacity 
@@ -586,6 +595,25 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.3,
     marginRight: 6,
+  },
+
+  exampleWrapper: {
+    marginTop: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FFD02C',
+    width: '100%',
+  },
+  exampleText: {
+    fontSize: 13,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontStyle: 'italic',
+    lineHeight: 18,
+    textAlign: 'center',
   },
 
   modalOverlay: {

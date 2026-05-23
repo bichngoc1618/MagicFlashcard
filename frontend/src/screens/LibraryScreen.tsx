@@ -63,7 +63,7 @@ const getMaterialColorStyle = (title: string, isDark: boolean) => {
 };
 
 export default function StudyScreen({ navigation }: StudyScreenProps) {
-  const { user, notificationCount, refreshNotificationCount } = useAuthContext();
+  const { user, totalXp, notificationCount, refreshNotificationCount } = useAuthContext();
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -195,6 +195,7 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
               navigation.navigate('Dictionary', { query: searchText.trim() });
             }
           }}
+          userXp={totalXp}
           notificationCount={notificationCount}
           onNotificationPress={() => navigation.navigate('Notifications')}
         />

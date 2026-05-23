@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuthContext } from '../context/AuthContext';
 import { getChatHistory, clearChatHistory, speakText, speakAudio } from '../api/api';
 import { speakTextToSpeech } from '../utils/tts';
@@ -39,6 +40,9 @@ export default function SpeakingPracticeScreen() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const isPreparingRef = useRef<boolean>(false);
+  const shouldStopRef = useRef<boolean>(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const webMediaRecorderRef = useRef<any>(null);
   const webAudioChunksRef = useRef<Blob[]>([]);
@@ -196,14 +200,50 @@ export default function SpeakingPracticeScreen() {
       return;
     }
 
+    if (isListening || isPreparingRef.current || recordingRef.current) {
+      return;
+    }
+
+    isPreparingRef.current = true;
+    shouldStopRef.current = false;
+
     try {
       const { granted } = await Audio.requestPermissionsAsync();
-      if (!granted) return;
+      if (!granted) {
+        isPreparingRef.current = false;
+        return;
+      }
+
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      setRecording(recording);
+      
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+
+      // Check if handleStopListening was already called while we were preparing
+      if (shouldStopRef.current) {
+        try {
+          await newRecording.stopAndUnloadAsync();
+        } catch (e) {
+          // ignore
+        }
+        recordingRef.current = null;
+        setRecording(null);
+        setIsListening(false);
+        return;
+      }
+
+      recordingRef.current = newRecording;
+      setRecording(newRecording);
       setIsListening(true);
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error('Error starting recording:', err);
+      recordingRef.current = null;
+      setRecording(null);
+      setIsListening(false);
+    } finally {
+      isPreparingRef.current = false;
+    }
   };
 
   const handleStopListening = async () => {
@@ -215,15 +255,74 @@ export default function SpeakingPracticeScreen() {
       return;
     }
 
-    if (!recording) return;
+    if (isPreparingRef.current) {
+      shouldStopRef.current = true;
+      setIsListening(false);
+      return;
+    }
+
+    const currentRecording = recordingRef.current;
+    if (!currentRecording) {
+      setIsListening(false);
+      return;
+    }
+
     setIsListening(false);
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      await currentRecording.stopAndUnloadAsync();
+      const uri = currentRecording.getURI();
+      recordingRef.current = null;
       setRecording(null);
       if (uri) handleVoiceChatWithAI(uri);
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error('Error stopping recording:', err);
+      recordingRef.current = null;
+      setRecording(null);
+    }
   };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      return () => {
+        // Stop and unload recording when screen is unfocused (navigated away)
+        if (recordingRef.current) {
+          recordingRef.current.stopAndUnloadAsync().catch(err => {
+            console.warn('Error unloading recording on focus lose:', err);
+          });
+          recordingRef.current = null;
+          setRecording(null);
+        }
+        if (webMediaRecorderRef.current && webMediaRecorderRef.current.state !== 'inactive') {
+          try {
+            webMediaRecorderRef.current.stop();
+          } catch (e) {
+            console.warn('Error stopping web media recorder on focus lose:', e);
+          }
+        }
+        setIsListening(false);
+      };
+    }, [])
+  );
+
+  useEffect(() => {
+    return () => {
+      // Unmount cleanup
+      if (recordingRef.current) {
+        recordingRef.current.stopAndUnloadAsync().catch(err => {
+          console.warn('Error unloading recording on unmount:', err);
+        });
+        recordingRef.current = null;
+      }
+      if (webMediaRecorderRef.current && webMediaRecorderRef.current.state !== 'inactive') {
+        try {
+          webMediaRecorderRef.current.stop();
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
 
   // Hệ màu phẳng đậm lục bảo đồng bộ hóa
   const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';

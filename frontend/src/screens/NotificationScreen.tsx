@@ -35,7 +35,7 @@ const formatTimeAgo = (dateString: string) => {
   if (diffInHours < 24) return `${diffInHours} giờ trước`;
   if (diffInDays === 1) return 'Hôm qua';
   if (diffInDays < 7) return `${diffInDays} ngày trước`;
-  
+
   return past.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
@@ -97,8 +97,8 @@ export default function NotificationScreen({ navigation }: NotificationScreenPro
       <TouchableOpacity
         style={[
           styles.notificationCard,
-          { 
-            backgroundColor: colors.card, 
+          {
+            backgroundColor: colors.card,
             borderColor: isUnread ? colors.primary + '30' : colors.border, // Viền nổi bật nhẹ nếu chưa đọc
             shadowColor: colors.text,
           }
@@ -108,9 +108,9 @@ export default function NotificationScreen({ navigation }: NotificationScreenPro
       >
         <View style={styles.row}>
           {/* Box Icon động theo trạng thái và tương thích Dark Mode */}
-          <View 
+          <View
             style={[
-              styles.notificationIconBox, 
+              styles.notificationIconBox,
               { backgroundColor: isUnread ? colors.primary + '15' : (isDark ? '#2A2A2A' : '#F0F0F0') }
             ]}
           >
@@ -123,10 +123,10 @@ export default function NotificationScreen({ navigation }: NotificationScreenPro
 
           <View style={styles.notificationContent}>
             <View style={styles.titleRow}>
-              <Text 
+              <Text
                 numberOfLines={1}
                 style={[
-                  styles.notificationTitle, 
+                  styles.notificationTitle,
                   { color: colors.text, fontWeight: isUnread ? '700' : '500' }
                 ]}
               >
@@ -135,17 +135,17 @@ export default function NotificationScreen({ navigation }: NotificationScreenPro
               {/* Chấm tròn xanh báo hiệu chưa đọc */}
               {isUnread && <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]} />}
             </View>
-            
-            <Text 
+
+            <Text
               numberOfLines={3}
               style={[
-                styles.notificationBody, 
+                styles.notificationBody,
                 { color: isUnread ? colors.text : colors.textSecondary }
               ]}
             >
               {item.body}
             </Text>
-            
+
             <Text style={[styles.notificationDate, { color: colors.textSecondary }]}>
               {formatTimeAgo(item.created_at)}
             </Text>
@@ -161,23 +161,23 @@ export default function NotificationScreen({ navigation }: NotificationScreenPro
 
   return (
     <ScreenContainer>
-      <View style={[styles.pageHeader, { borderBottomColor: colors.border, backgroundColor: colors.background }]}> 
+      <View style={[styles.pageHeader, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => {
               if (navigation.canGoBack()) {
                 navigation.goBack();
               } else {
                 navigation.navigate('MainTabs' as any);
               }
-            }} 
+            }}
             style={{ padding: 8, marginLeft: -8, marginRight: 8, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderRadius: 12 }}
           >
             <ArrowLeft size={20} color={colors.text} />
           </TouchableOpacity>
           <Text style={[styles.pageTitle, { color: colors.text, marginBottom: 0 }]}>Thông báo</Text>
         </View>
-        <Text style={[styles.pageSubtitle, { color: colors.textSecondary }]}>Danh sách thẻ đã chia sẻ tới bạn</Text>
+        {/* <Text style={[styles.pageSubtitle, { color: colors.textSecondary }]}>Danh sách thẻ đã chia sẻ tới bạn</Text> */}
       </View>
 
       {loading ? (

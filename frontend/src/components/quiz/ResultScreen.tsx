@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Alert, Platform, Image, Modal } from 'react-native';
 import { X, CheckCircle2, AlertCircle, Trophy, Eye, RefreshCw, ArrowRight, ArrowLeft, BookOpen, Volume2 } from 'lucide-react-native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withDelay, withRepeat, interpolate, Easing, runOnJS, withSequence } from 'react-native-reanimated';
@@ -235,6 +235,8 @@ export default function ResultScreen({
   const [showingFailed, setShowingFailed] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
+  const [showCongratsModal, setShowCongratsModal] = useState(false);
+
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
   const { showAlert } = useGlobalUI();
@@ -255,6 +257,9 @@ export default function ResultScreen({
     if (showStreakCelebration) {
       setShowCelebration(true);
     }
+    if (isBoss) {
+      setShowCongratsModal(true);
+    }
 
     const confettiTimer = setTimeout(() => setShowConfetti(false), 3000);
     const celebrationTimer = setTimeout(() => setShowCelebration(false), 1800);
@@ -263,7 +268,7 @@ export default function ResultScreen({
       clearTimeout(confettiTimer);
       clearTimeout(celebrationTimer);
     };
-  }, [passedThreshold, showStreakCelebration]);
+  }, [passedThreshold, showStreakCelebration, isBoss]);
 
   const handleShowFailed = () => {
     if (failedAnswers.length === 0) {
@@ -354,6 +359,30 @@ export default function ResultScreen({
   // --- BẢNG ĐIỂM KẾT QUẢ CHÍNH (MAIN INTERFACE) ---
   return (
     <ScreenContainer>
+      {/* POPUP CHÚC MỪNG HOÀN THÀNH NODE CUỐI CÙNG */}
+      <Modal visible={showCongratsModal} transparent animationType="fade" onRequestClose={() => setShowCongratsModal(false)}>
+        <View style={styles.congratsModalOverlay}>
+          <View style={[styles.congratsModalCard, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2EBE8' }]}>
+            <ConfettiCannon count={100} origin={{ x: width / 2, y: -40 }} fadeOut fallSpeed={2000} />
+            <Image source={require('../../../assets/sharkMagic.png')} style={styles.congratsImage} />
+            <Text style={styles.congratsTitle}>🎉 Chúc Mừng Bạn! 🎉</Text>
+            <Text style={[styles.congratsSubtitle, { color: colors.textSecondary }]}>
+              Bạn đã xuất sắc vượt qua thử thách cuối cùng <Text style={{ color: colors.primary, fontWeight: '900' }}>Final Boss</Text> và hoàn thành xuất sắc toàn bộ lộ trình học từ vựng!
+            </Text>
+            <View style={[styles.xpRewardBadge, { backgroundColor: isDark ? 'rgba(59, 122, 102, 0.2)' : '#E9FBF5', borderColor: themePrimaryColor }]}>
+              <Text style={[styles.xpRewardText, { color: themePrimaryColor }]}>+100 XP Thưởng</Text>
+            </View>
+            <TouchableOpacity 
+              activeOpacity={0.9} 
+              style={[styles.congratsBtn, { backgroundColor: themePrimaryColor }]} 
+              onPress={() => setShowCongratsModal(false)}
+            >
+              <Text style={styles.congratsBtnText}>Tuyệt vời!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <ScrollView 
         contentContainerStyle={[
           styles.scrollContainer, 
@@ -725,5 +754,67 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#FFD02C',
     textAlign: 'center',
+  },
+  congratsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  congratsModalCard: {
+    width: '100%',
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    borderWidth: 1,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.15, shadowRadius: 24 },
+      android: { elevation: 8 },
+    }),
+  },
+  congratsImage: {
+    width: 140,
+    height: 140,
+    marginBottom: 20,
+    resizeMode: 'contain',
+  },
+  congratsTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#FFD02C',
+    textAlign: 'center',
+    marginBottom: 12,
+    letterSpacing: -0.5,
+  },
+  congratsSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 20,
+    fontWeight: '600',
+  },
+  xpRewardBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 14,
+    marginBottom: 24,
+    borderWidth: 1.5,
+  },
+  xpRewardText: {
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  congratsBtn: {
+    width: '100%',
+    height: 50,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  congratsBtnText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '900',
   },
 });

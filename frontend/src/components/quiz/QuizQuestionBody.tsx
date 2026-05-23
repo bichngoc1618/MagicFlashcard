@@ -303,6 +303,7 @@ export default function QuizQuestionBody({
   const [fallingTiles, setFallingTiles] = useState<{ id: string; char: string; startX: number; startY: number; targetX: number; targetY: number }[]>([]);
 
   const handleBankPress = (tileId: string, char: string) => {
+    if (chosenTileIds.length >= currentWord.hiragana.length) return;
     if (flyingTiles.some(t => t.id === tileId)) return;
     
     const bankEl = bankRefs.current[tileId];
@@ -1027,7 +1028,7 @@ export default function QuizQuestionBody({
                 return (
                   <View key={tile.id} ref={el => { bankRefs.current[tile.id] = el; }}>
                     <TouchableOpacity
-                      disabled={used || hasSubmitted}
+                      disabled={used || hasSubmitted || chosenTileIds.length >= currentWord.hiragana.length}
                       onPress={() => handleBankPress(tile.id, tile.char)}
                       style={[
                         styles.tile,

@@ -25,7 +25,7 @@ export default function AppHeaderSearch({
   searchText,
   onChangeSearchText,
   onSubmitSearch,
-  userXp = 0,
+  userXp,
   greetingText = 'Xin chào 👋🏻',
   placeholder = 'Tìm kiếm từ vựng...',
   notificationCount,
@@ -33,7 +33,7 @@ export default function AppHeaderSearch({
 }: AppHeaderSearchProps) {
   const { theme, colors, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
-  const { logout } = useAuthContext();
+  const { logout, totalXp } = useAuthContext();
   const { showAlert } = useGlobalUI();
 
   const handleLogout = () => {
@@ -44,7 +44,7 @@ export default function AppHeaderSearch({
   };
 
   // ✅ ĐỒNG BỘ 100% VỚI PROFILE: Sử dụng chính xác hàm trung tâm để tính toán cấp độ hiện tại
-  const levelInfo = useMemo(() => calculateLevelInfo(userXp), [userXp]);
+  const levelInfo = useMemo(() => calculateLevelInfo(userXp !== undefined ? userXp : totalXp), [userXp, totalXp]);
 
   const dynamicStyles = {
     container: {

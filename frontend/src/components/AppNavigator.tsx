@@ -67,6 +67,7 @@ export type RootStackParamList = {
     chunkSize?: number;
     learnedCount?: number;
     sessionId?: number;
+    isAlreadyCompleted?: boolean;
   };
 };
 const Stack = createStackNavigator<RootStackParamList>();

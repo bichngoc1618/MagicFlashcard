@@ -104,6 +104,7 @@ const handleNodePress = async (
   materialId: number,
   navigation: any,
   user?: any,
+  isAlreadyCompleted?: boolean,
 ) => {
   if (!node || !navigation) return;
 
@@ -146,6 +147,7 @@ const handleNodePress = async (
     quizStepType: mapNodeTypeToQuizType(node.nodeType),
     nodeIndex: index,
     sessionId,
+    isAlreadyCompleted,
   });
 };
 
@@ -334,7 +336,7 @@ const NodeItem = React.memo(
             disabled={isLocked}
             onPressIn={handlePressIn}
             onPressOut={handlePressOut}
-            onPress={() => handleNodePress(node, index, materialId, navigation, user)}
+            onPress={() => handleNodePress(node, index, materialId, navigation, user, isCompleted)}
             style={[
               styles.node3DTop,
               {
@@ -505,13 +507,13 @@ export default function StudyJourneyScreen({
   );
 
   const onNodePressWrapper = useCallback(
-    (node: any, index: number, matId: number, nav: any, currentUser?: any) => {
+    (node: any, index: number, matId: number, nav: any, currentUser?: any, isAlreadyCompleted?: boolean) => {
       if (globalHearts === 0 && node.nodeType !== 'FLASHCARD') {
-        setPendingNode({ node, index, matId, nav, currentUser });
+        setPendingNode({ node, index, matId, nav, currentUser, isAlreadyCompleted });
         setShowOutOfHeartsModal(true);
         return;
       }
-      handleNodePress(node, index, matId, nav, currentUser);
+      handleNodePress(node, index, matId, nav, currentUser, isAlreadyCompleted);
     },
     [globalHearts],
   );
@@ -537,7 +539,7 @@ export default function StudyJourneyScreen({
       triggerHaptic(Haptics.NotificationFeedbackType.Success);
       setShowOutOfHeartsModal(false);
       if (pendingNode) {
-        handleNodePress(pendingNode.node, pendingNode.index, pendingNode.matId, pendingNode.nav, pendingNode.currentUser);
+        handleNodePress(pendingNode.node, pendingNode.index, pendingNode.matId, pendingNode.nav, pendingNode.currentUser, pendingNode.isAlreadyCompleted);
         setPendingNode(null);
       }
     } else {
@@ -634,6 +636,7 @@ export default function StudyJourneyScreen({
               searchText.trim() &&
               navigation.navigate('Dictionary', { query: searchText.trim() })
             }
+            userXp={totalXp}
             notificationCount={notificationCount}
             onNotificationPress={() => navigation.navigate('Notifications')}
           />

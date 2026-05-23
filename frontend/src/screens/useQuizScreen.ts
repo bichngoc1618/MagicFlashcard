@@ -7,6 +7,35 @@ import { getFlashcards, updateProgress, completeQuizNode, syncStudy } from '../a
 import type { QuizType, QuizWord, AnswerRecord } from '../components/quiz/types';
 import { chunkVocabulary } from '../utils/journeyMap';
 
+const DEFAULT_DISTRACTORS: QuizWord[] = [
+  { id: 'distractor-1', kanji: '先生', hiragana: 'せんせい', meaning: 'giáo viên' },
+  { id: 'distractor-2', kanji: '学生', hiragana: 'がくせい', meaning: 'học sinh' },
+  { id: 'distractor-3', kanji: '友達', hiragana: 'ともだch', meaning: 'bạn bè' },
+  { id: 'distractor-4', kanji: '学校', hiragana: 'がっこう', meaning: 'trường học' },
+  { id: 'distractor-5', kanji: '日本語', hiragana: 'にほんご', meaning: 'tiếng Nhật' },
+  { id: 'distractor-6', kanji: '本', hiragana: 'ほん', meaning: 'sách' },
+  { id: 'distractor-7', kanji: '水', hiragana: 'mizu', meaning: 'nước' },
+  { id: 'distractor-8', kanji: 'お茶', hiragana: 'おちゃ', meaning: 'trà' },
+];
+
+const DEFAULT_MEANINGS = [
+  'giáo viên',
+  'học sinh',
+  'bạn bè',
+  'trường học',
+  'tiếng Nhật',
+  'sách',
+  'nước',
+  'trà',
+  'ngày mai',
+  'hôm nay',
+  'hôm qua',
+  'xe hơi',
+  'điện thoại',
+  'máy tính',
+  'gia đình',
+];
+
 function shuffle<T>(array: T[]): T[] {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -134,8 +163,25 @@ function getTimerForType(type: QuizType): number {
 }
 
 function buildMultipleChoiceOptions(word: QuizWord, pool: QuizWord[]) {
-  const distractors = shuffle(pool.filter((item) => item.id !== word.id)).slice(0, 3);
-  return shuffle([word.meaning, ...distractors.map((item) => item.meaning)]);
+  const distractors = pool.filter((item) => item.id !== word.id).map((item) => item.meaning);
+  const uniqueDistractors = Array.from(new Set(distractors)).filter((meaning) => meaning !== word.meaning);
+  
+  const selectedDistractors = uniqueDistractors.slice(0, 3);
+  
+  // Nếu vẫn thiếu đáp án để đủ 4 đáp án (1 đáp án đúng + 3 đáp án nhiễu)
+  if (selectedDistractors.length < 3) {
+    const fallbackPool = shuffle(DEFAULT_MEANINGS);
+    let fallbackIndex = 0;
+    while (selectedDistractors.length < 3 && fallbackIndex < fallbackPool.length) {
+      const mean = fallbackPool[fallbackIndex];
+      if (mean !== word.meaning && !selectedDistractors.includes(mean)) {
+        selectedDistractors.push(mean);
+      }
+      fallbackIndex++;
+    }
+  }
+
+  return shuffle([word.meaning, ...selectedDistractors]);
 }
 
 function buildFinalBossQuestions(words: QuizWord[], nodeType: string): QuizQuestion[] {
@@ -474,16 +520,41 @@ export default function useQuizScreen({
   const matchRoundCount = matchWords.length < 7 ? 1 : 2;
   const currentMatchWords = useMemo<QuizWord[]>(() => {
     if (matchWords.length === 0) return [];
-    if (matchRoundCount === 1) return matchWords;
-    if (matchWords.length <= 1) return matchWords;
-
-    const half = Math.ceil(matchWords.length / 2);
-    if (matchRound === 0) {
-      return matchWords.slice(0, half);
+    
+    let base: QuizWord[] = [];
+    if (matchRoundCount === 1) {
+      base = matchWords;
+    } else if (matchWords.length <= 1) {
+      base = matchWords;
     } else {
-      return matchWords.slice(half);
+      const half = Math.ceil(matchWords.length / 2);
+      base = matchRound === 0 ? matchWords.slice(0, half) : matchWords.slice(half);
     }
-  }, [matchRound, matchWords, matchRoundCount]);
+
+    if (base.length < 3) {
+      const padded = [...base];
+      // 1. Lấy từ các từ khác của bộ thẻ hiện tại (words) mà không nằm trong base
+      const otherWordsInMaterial = words.filter((w) => !padded.some((p) => p.id === w.id));
+      let otherIdx = 0;
+      while (padded.length < 3 && otherIdx < otherWordsInMaterial.length) {
+        padded.push(otherWordsInMaterial[otherIdx]);
+        otherIdx++;
+      }
+
+      // 2. Nếu vẫn thiếu (ví dụ bộ thẻ chỉ có 1 hoặc 2 từ tổng cộng), lấy từ danh sách DEFAULT_DISTRACTORS
+      let defIdx = 0;
+      while (padded.length < 3 && defIdx < DEFAULT_DISTRACTORS.length) {
+        const dist = DEFAULT_DISTRACTORS[defIdx];
+        if (!padded.some((p) => p.id === dist.id)) {
+          padded.push(dist);
+        }
+        defIdx++;
+      }
+      return padded;
+    }
+
+    return base;
+  }, [matchRound, matchWords, matchRoundCount, words]);
 
   const currentMatchRightItems = useMemo(
     () =>
