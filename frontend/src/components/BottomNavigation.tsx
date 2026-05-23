@@ -11,6 +11,7 @@ import { Home, BookOpenText, Library, Mic2, UserRound } from 'lucide-react-nativ
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useTheme } from '../context/ThemeContext';
+import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 type BottomTabKey = 'home' | 'study' | 'library' | 'SpeakingPractice' | 'profile';
 
@@ -71,7 +72,7 @@ function AnimatedTab({
   );
 }
 
-import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+
 
 export default function BottomNavigation(props: any) {
   const { state, navigation: tabNavigation, activeTab } = props;
