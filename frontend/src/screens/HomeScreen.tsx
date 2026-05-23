@@ -375,6 +375,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                   onPress={() => navigation.navigate('StudyJourney', { materialId: item.id })}
                   colors={colors}
                   isDark={isDark}
+                  onTitleUpdated={(newTitle: string) => {
+                    setMaterials((prev: any[]) =>
+                      prev.map((m: any) => m.id === item.id ? { ...m, title: newTitle } : m)
+                    );
+                  }}
                 />
               );
             })}
@@ -400,8 +405,14 @@ function SectionHeader({ title, actionLabel, onAction, colors }: any) {
   );
 }
 
-function SmallCourseCard({ title, stats, progress, onPress, materialId, colors, isDark }: any) {
-  const nodePalette = useMemo(() => getMaterialColorStyle(title, isDark), [title, isDark]);
+function SmallCourseCard({ title, stats, progress, onPress, materialId, colors, isDark, onTitleUpdated }: any) {
+  const [displayTitle, setDisplayTitle] = useState(title);
+  const nodePalette = useMemo(() => getMaterialColorStyle(displayTitle, isDark), [displayTitle, isDark]);
+
+  const handleTitleUpdated = useCallback((newTitle: string) => {
+    setDisplayTitle(newTitle);
+    if (onTitleUpdated) onTitleUpdated(newTitle);
+  }, [onTitleUpdated]);
 
   return (
     <View style={[styles.courseCard, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
@@ -409,13 +420,13 @@ function SmallCourseCard({ title, stats, progress, onPress, materialId, colors, 
         <View style={[styles.courseIconBox, { backgroundColor: nodePalette.lightBg }]}>
           <BookOpen size={16} color={nodePalette.primary} />
         </View>
-        <VocabularyManager materialId={materialId} materialTitle={title} iconSize={16} />
+        <VocabularyManager materialId={materialId} materialTitle={displayTitle} iconSize={16} onMaterialUpdated={handleTitleUpdated} />
       </View>
 
-      <Text style={[styles.courseCardTitle, { color: colors.text }]} numberOfLines={1}>{title}</Text>
+      <Text style={[styles.courseCardTitle, { color: colors.text }]} numberOfLines={1}>{displayTitle}</Text>
       <Text style={[styles.courseCardStats, { color: colors.textSecondary }]}>{stats}</Text>
 
-      <ProgressBar progress={progress} colors={colors} isDark={isDark} title={title} height={8} />
+      <ProgressBar progress={progress} colors={colors} isDark={isDark} title={displayTitle} height={8} />
 
       <View style={styles.btn3DWrapper}>
         <View style={[styles.btn3DBase, { backgroundColor: nodePalette.shadow }]} />

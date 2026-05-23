@@ -86,6 +86,27 @@ export const createMaterial = async (req, res) => {
   }
 };
 
+export const updateMaterial = async (req, res) => {
+  try {
+    const materialId = Number(req.params.materialId);
+    const { title, description } = req.body;
+    
+    if (!materialId || !title) {
+      return res.status(400).json({ error: 'Thiếu materialId hoặc title.' });
+    }
+
+    await db.query(
+      'UPDATE study_materials SET title = ?, description = ? WHERE id = ?',
+      [title, description || null, materialId]
+    );
+
+    return res.json({ materialId, title, description: description || '', success: true });
+  } catch (error) {
+    console.error('PUT /materials/:materialId error', error);
+    return res.status(500).json({ error: 'Không thể cập nhật tên bộ thẻ.' });
+  }
+};
+
 export const createFlashcard = async (req, res) => {
   try {
     const { materialId, word, kanji, meaning, example } = req.body;

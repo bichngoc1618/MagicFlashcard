@@ -2,6 +2,7 @@ import express from 'express';
 import {
   getMaterials,
   createMaterial,
+  updateMaterial,
   createFlashcard,
   createFlashcardsBulk,
   updateFlashcard,
@@ -38,6 +39,7 @@ const router = express.Router();
 
 router.get('/materials/:userId', getMaterials);
 router.post('/materials', createMaterial);
+router.put('/materials/:materialId', updateMaterial);
 router.post('/flashcards', createFlashcard);
 router.post('/flashcards/bulk', createFlashcardsBulk);
 router.put('/flashcards/:flashcardId', updateFlashcard);

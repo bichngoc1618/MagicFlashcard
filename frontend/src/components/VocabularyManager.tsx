@@ -22,7 +22,7 @@ import {
   ScrollView,
 } from 'react-native';
 
-import { Menu, Plus, X, Share2, Trash2 } from 'lucide-react-native';
+import { Menu, Plus, X, Share2, Trash2, Edit2 } from 'lucide-react-native';
 
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -35,6 +35,7 @@ import {
   updateFlashcard,
   shareMaterial,
   deleteMaterial,
+  updateMaterial,
 } from '../api/api';
 
 import VocabularyItem from './VocabularyItem';
@@ -54,6 +55,7 @@ type VocabularyManagerProps = {
   materialTitle?: string;
   iconSize?: number;
   onMaterialDeleted?: () => void;
+  onMaterialUpdated?: (newTitle: string) => void;
 };
 
 export default function VocabularyManager({
@@ -61,6 +63,7 @@ export default function VocabularyManager({
   materialTitle,
   iconSize = 18,
   onMaterialDeleted,
+  onMaterialUpdated,
 }: VocabularyManagerProps) {
   const { user, refreshNotificationCount } = useAuthContext();
   const { colors } = useTheme();
@@ -73,6 +76,12 @@ export default function VocabularyManager({
   const [recipientEmail, setRecipientEmail] = useState('');
   const [shareError, setShareError] = useState('');
   const [shareLoading, setShareLoading] = useState(false);
+  
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editTitle, setEditTitle] = useState(materialTitle || '');
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -226,7 +235,41 @@ export default function VocabularyManager({
     }
   };
 
-  /* ================= BULK ================= */
+  const openEditModal = () => {
+    setEditTitle(materialTitle || '');
+    setEditError('');
+    setEditModalVisible(true);
+    setDropdownVisible(false);
+  };
+
+  const closeEditModal = () => {
+    setEditModalVisible(false);
+    setEditTitle('');
+    setEditError('');
+  };
+
+  const handleEditTitle = async () => {
+    if (!editTitle.trim()) {
+      setEditError('Vui lòng nhập tên bộ thẻ.');
+      return;
+    }
+    setEditLoading(true);
+    setEditError('');
+    try {
+      await updateMaterial(materialId, editTitle.trim());
+      closeEditModal();
+      showToast('Đã đổi tên bộ thẻ!');
+      if (onMaterialUpdated) {
+        onMaterialUpdated(editTitle.trim());
+      }
+    } catch (e: any) {
+      setEditError(e.message || 'Không thể cập nhật tên bộ thẻ.');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  /* ================= RENDER ================= */
   const handleBulkImport = async (payloads: any[]) => {
     showLoader('Đang import...');
 
@@ -477,7 +520,13 @@ export default function VocabularyManager({
                 <View style={{ position: 'absolute', left, top, width: boxWidth }}>
                   <View style={[dynamicStyles.dropdownBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <TouchableOpacity style={dynamicStyles.dropdownItem} onPress={() => { setDropdownVisible(false); toggleSheet(); }}>
-                      <Text style={[dynamicStyles.dropdownText, { color: colors.text }]}>Quản lý</Text>
+                      <Text style={[dynamicStyles.dropdownText, { color: colors.text }]}>Quản lý thẻ</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={dynamicStyles.dropdownItem} onPress={openEditModal}>
+                      <View style={dynamicStyles.dropdownRow}>
+                        <Edit2 size={16} color={colors.primary} />
+                        <Text style={[dynamicStyles.dropdownText, { color: colors.text }]}>Đổi tên bộ thẻ</Text>
+                      </View>
                     </TouchableOpacity>
                     <TouchableOpacity style={dynamicStyles.dropdownItem} onPress={openShareModal}>
                       <View style={dynamicStyles.dropdownRow}>
@@ -534,6 +583,46 @@ export default function VocabularyManager({
                 disabled={shareLoading}
               >
                 <Text style={dynamicStyles.actionBtnText}>{shareLoading ? 'Đang gửi...' : 'Gửi'}</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* EDIT MODAL */}
+      <Modal visible={editModalVisible} transparent animationType="fade">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <TouchableOpacity style={dynamicStyles.dropdownOverlay} activeOpacity={1} onPress={closeEditModal} />
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }} keyboardShouldPersistTaps="handled">
+            <View style={[dynamicStyles.shareCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={dynamicStyles.header}>
+                <View>
+                  <Text style={dynamicStyles.title}>Đổi tên bộ thẻ</Text>
+                  <Text style={dynamicStyles.subtitle}>Nhập tên mới cho bộ thẻ này.</Text>
+                </View>
+                <TouchableOpacity onPress={closeEditModal}>
+                  <X size={20} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={[dynamicStyles.input, { borderColor: colors.border, color: colors.text, backgroundColor: colors.background }]}
+                placeholder="Ví dụ: N5 Bài 1..."
+                placeholderTextColor={colors.textSecondary}
+                value={editTitle}
+                onChangeText={(text) => { setEditTitle(text); setEditError(''); }}
+                autoFocus
+              />
+              {editError ? <Text style={[dynamicStyles.errorText, { color: colors.danger || '#EF4444' }]}>{editError}</Text> : null}
+              <TouchableOpacity
+                style={[dynamicStyles.actionBtn, { backgroundColor: colors.primary, opacity: editLoading ? 0.7 : 1 }]}
+                activeOpacity={0.8}
+                onPress={handleEditTitle}
+                disabled={editLoading}
+              >
+                <Text style={dynamicStyles.actionBtnText}>{editLoading ? 'Đang lưu...' : 'Lưu thay đổi'}</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>

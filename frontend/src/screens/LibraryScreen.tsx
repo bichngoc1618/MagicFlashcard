@@ -370,8 +370,9 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
 
 /* ================= STUDY CARD ITEM ĐỒNG BỘ FLAT & ĐẬM MÀU ================= */
 function StudyCardItem({ card, onPress, isDone, isDark, colors, onMaterialDeleted }: any) {
+  const [displayTitle, setDisplayTitle] = useState(card.title);
   const progressPercent = Math.round(card.progress * 100);
-  const nodePalette = useMemo(() => getMaterialColorStyle(card.title, isDark), [card.title, isDark]);
+  const nodePalette = useMemo(() => getMaterialColorStyle(displayTitle, isDark), [displayTitle, isDark]);
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}> 
@@ -391,7 +392,7 @@ function StudyCardItem({ card, onPress, isDone, isDark, colors, onMaterialDelete
 
       <View style={styles.cardContent}>
         <View style={styles.cardHeaderRow}>
-          <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{card.title}</Text>
+          <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{displayTitle}</Text>
           <View style={[styles.percentBadge, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }, isDone && { backgroundColor: nodePalette.lightBg }]}>
             <Text style={[styles.percentText, { color: isDone ? nodePalette.primary : colors.textSecondary }]}>
               {progressPercent}%
@@ -418,8 +419,9 @@ function StudyCardItem({ card, onPress, isDone, isDark, colors, onMaterialDelete
           <View style={styles.miniManager}>
             <VocabularyManager
               materialId={Number(card.id)}
-              materialTitle={card.title}
+              materialTitle={displayTitle}
               onMaterialDeleted={onMaterialDeleted}
+              onMaterialUpdated={(newTitle: string) => setDisplayTitle(newTitle)}
             />
           </View>
         </View>

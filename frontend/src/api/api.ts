@@ -56,6 +56,13 @@ export const deleteMaterial = async (materialId: number) => {
   });
 };
 
+export const updateMaterial = async (materialId: number, title: string, description?: string) => {
+  return request(`/api/materials/${materialId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ title, description }),
+  });
+};
+
 export const getStudyJourney = async (materialId: number, userId?: number) => {
   const query = userId ? `?userId=${userId}` : '';
   return request(`/api/study/journey/${materialId}${query}`);
