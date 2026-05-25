@@ -13,8 +13,6 @@ const db = mysql.createPool({
     port: Number(process.env.DB_PORT || 3306), // MySQL/XAMPP mặc định là 3306, TiDB có thể dùng 4000
     waitForConnections: true,
     connectionLimit: 10,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 0,
     // Ép kiểu cấu hình SSL chuẩn chỉnh theo đúng cú pháp TiDB Cloud yêu cầu
     ssl: useSSL ? { minVersion: 'TLSv1.2', rejectUnauthorized: false } : null
 });
@@ -30,23 +28,12 @@ const db = mysql.createPool({
     }
 })();
 
-// Kiểm tra kết nối với Retry cho TiDB Serverless (wake up from sleep)
-const testConnection = async (retries = 5, delay = 3000) => {
-    while (retries > 0) {
-        try {
-            const connection = await db.getConnection();
-            console.log("✅ Đã kết nối cơ sở dữ liệu thành công!");
-            connection.release();
-            return;
-        } catch (err) {
-            console.warn(`⚠️ Lỗi kết nối Database (${err.message}). Thử lại sau ${delay / 1000}s... (còn ${retries - 1} lần)`);
-            retries -= 1;
-            await new Promise(res => setTimeout(res, delay));
-        }
-    }
-    console.error("❌ Không thể kết nối Database sau nhiều lần thử.");
-};
-
-testConnection();
+// Kiểm tra kết nối
+db.getConnection()
+    .then((connection) => {
+        console.log("✅ Đã kết nối cơ sở dữ liệu thành công!");
+        connection.release(); // Giải phóng connection sau khi test xong để tránh tràn pool
+    })
+    .catch(err => console.log("❌ Lỗi kết nối Database:", err.message));
 
 export default db;
