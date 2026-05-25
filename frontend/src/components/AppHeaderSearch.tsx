@@ -5,10 +5,10 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuthContext } from '../context/AuthContext';
 import { useGlobalUI } from '../context/GlobalUIContext';
 import { calculateLevelInfo } from '../utils/level';
+import { AVATARS } from '../screens/ProfileScreen';
 
 type AppHeaderSearchProps = {
   displayName: string;
-  mascotSource: any;
   searchText: string;
   onChangeSearchText: (text: string) => void;
   onSubmitSearch: () => void;
@@ -21,7 +21,6 @@ type AppHeaderSearchProps = {
 
 export default function AppHeaderSearch({
   displayName,
-  mascotSource,
   searchText,
   onChangeSearchText,
   onSubmitSearch,
@@ -33,7 +32,7 @@ export default function AppHeaderSearch({
 }: AppHeaderSearchProps) {
   const { theme, colors, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
-  const { logout, totalXp } = useAuthContext();
+  const { user, logout, totalXp } = useAuthContext();
   const { showAlert } = useGlobalUI();
 
   const handleLogout = () => {
@@ -42,6 +41,12 @@ export default function AppHeaderSearch({
       { text: 'Đăng xuất', style: 'destructive', onPress: logout }
     ], 'warning');
   };
+
+  // Lấy avatar hiện tại của người dùng từ AuthContext
+  const currentAvatarSource = useMemo(() => {
+    const avatarId = user?.avatar_id || 'shark_magic';
+    return AVATARS.find(a => a.id === avatarId)?.image || AVATARS[0].image;
+  }, [user?.avatar_id]);
 
   // ✅ ĐỒNG BỘ 100% VỚI PROFILE: Sử dụng chính xác hàm trung tâm để tính toán cấp độ hiện tại
   const levelInfo = useMemo(() => calculateLevelInfo(userXp !== undefined ? userXp : totalXp), [userXp, totalXp]);
@@ -195,7 +200,7 @@ export default function AppHeaderSearch({
       <View style={dynamicStyles.topRow}>
         <View style={dynamicStyles.profileRow}>
           <View style={dynamicStyles.avatarCard}>
-            <Image source={mascotSource} style={dynamicStyles.avatar} resizeMode="contain" />
+            <Image source={currentAvatarSource} style={dynamicStyles.avatar} resizeMode="contain" />
 
             {/* Hiển thị chuẩn xác nhãn viên nang phẳng của Level nhận từ hàm trung tâm */}
             <View style={dynamicStyles.levelBadgeMini}>

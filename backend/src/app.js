@@ -10,7 +10,7 @@ import axios from "axios"; // Đã thêm axios vào để dùng cho tính năng 
 
 // 1. Import kết nối Database (Tự động kích hoạt log kiểm tra)
 import db from "./config/db.js";
-//import initDb from "./config/initDb.js";
+import initDb from "./config/initDb.js";
 import aiRoutes from "./services/serverAi.js";
 import appRoutes from "./routes/appRoutes.js";
 
@@ -69,7 +69,7 @@ const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
     try {
-        //await initDb();
+        await initDb();
         app.listen(PORT, () => {
             console.log("==========================================");
             console.log(`🦈 SERVER: Same-kun đã tỉnh giấc tại cổng ${PORT}`);

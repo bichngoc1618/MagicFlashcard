@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { X, BookOpen } from 'lucide-react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, withRepeat } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
 import ScreenContainer from '../ScreenContainer';
 import type { QuizType, QuizWord } from './types';
@@ -82,6 +84,7 @@ export interface QuizUIProps {
   onContinue: () => void;
   showWrongPairsReview: boolean;
   onProceedAfterReview: () => void;
+  onShowMatchAnswers: () => void;
   leftItemLayouts: React.MutableRefObject<Record<string, LayoutRectangle>>;
   rightItemLayouts: React.MutableRefObject<Record<string, LayoutRectangle>>;
 }
@@ -141,6 +144,7 @@ export default function QuizUI({
   onContinue,
   showWrongPairsReview,
   onProceedAfterReview,
+  onShowMatchAnswers,
   leftItemLayouts,
   rightItemLayouts,
 }: QuizUIProps) {
@@ -150,6 +154,27 @@ export default function QuizUI({
   // Hệ màu sắc tố trơn đậm đà đồng bộ hệ thống Home
   const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
   const themeShadowColor = isDark ? '#193D32' : '#275245';
+
+  const shakeTranslateX = useSharedValue(0);
+
+  React.useEffect(() => {
+    if ((isCorrect === false && hasSubmitted) || wrongPairs.size > 0 || wrongPair) {
+      shakeTranslateX.value = withSequence(
+        withTiming(10, { duration: 50 }),
+        withRepeat(withTiming(-10, { duration: 100 }), 3, true),
+        withTiming(0, { duration: 50 })
+      );
+      if (Platform.OS !== 'web' && Haptics && typeof Haptics.notificationAsync === 'function') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      }
+    }
+  }, [isCorrect, hasSubmitted, wrongPairs, wrongPair]);
+
+  const shakeStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateX: shakeTranslateX.value }]
+    };
+  });
 
   return (
     <ScreenContainer>
@@ -171,8 +196,8 @@ export default function QuizUI({
           style={styles.keyboardContainer}
         >
           {/* 2. Vùng nội dung có thể cuộn */}
-          <ScrollView
-            style={styles.scrollView}
+          <Animated.ScrollView
+            style={[styles.scrollView, shakeStyle]}
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -225,7 +250,7 @@ export default function QuizUI({
               leftItemLayouts={leftItemLayouts}
               rightItemLayouts={rightItemLayouts}
             />
-          </ScrollView>
+          </Animated.ScrollView>
 
           {/* 3. Footer chứa nút "Kiểm tra" cố định ở đáy */}
           <View style={[styles.footerWrapper, { backgroundColor: colors.card, borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
@@ -253,6 +278,7 @@ export default function QuizUI({
               onContinue={onContinue}
               onResetMatchState={onResetMatchState}
               onSetIsCorrect={onSetIsCorrect}
+              onShowMatchAnswers={onShowMatchAnswers}
               onChangeInput={onChangeInput}
               onSelectOption={onSelectOption}
               onResetChosenTileIds={onResetChosenTileIds}

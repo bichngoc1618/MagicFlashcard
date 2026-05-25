@@ -24,6 +24,9 @@ export type AnswerRecord = {
   type: QuizType;
   isCorrect: boolean;
   word: QuizWord;
+  userRightId?: string;
+  rightItemsOrder?: { id: string; label: string }[];
+  leftItemsOrder?: QuizWord[];
 };
 
 export type QuizQuestion = {

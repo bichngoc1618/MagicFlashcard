@@ -12,7 +12,7 @@ import type { QuizType } from '../components/quiz/types';
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useGlobalUI } from '../context/GlobalUIContext';
-import { completeQuizSession, syncStudy } from '../api/api';
+import { completeQuizSession, syncStudy, completeSrsReview } from '../api/api';
 import DuoHearts from '../components/quiz/DuoHearts';
 import useQuizScreen from './useQuizScreen';
 
@@ -40,6 +40,34 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     setLocalHearts(globalHearts);
   }, [globalHearts]);
 
+  // Bộ giữ tham chiếu ổn định để tránh tạo lại callback gây vòng lặp render
+  const deductHeartRef = React.useRef(deductHeartOnFailure);
+  React.useEffect(() => {
+    deductHeartRef.current = deductHeartOnFailure;
+  }, [deductHeartOnFailure]);
+
+  const stableDeductHeartOnFailure = React.useCallback(async (): Promise<number> => {
+    try {
+      const updated = await deductHeartRef.current();
+      setLocalHearts(updated);
+      if (updated <= 0) {
+        setIsOutOfHearts(true);
+      }
+      return updated;
+    } catch (err) {
+      console.warn('Lỗi trừ tim trong matching:', err);
+      let fallback = 0;
+      setLocalHearts((prev) => {
+        fallback = Math.max(prev - 1, 0);
+        if (fallback <= 0) {
+          setIsOutOfHearts(true);
+        }
+        return fallback;
+      });
+      return fallback;
+    }
+  }, []);
+
   // Các trạng thái kiểm soát luồng bất đồng bộ cục bộ để tránh Race Condition
   const [sessionLogged, setSessionLogged] = React.useState(false);
   const [streakUpdated, setStreakUpdated] = React.useState(false);
@@ -62,6 +90,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   const currentNodeIndex = route.params?.nodeIndex;
   const sessionId = route.params?.sessionId ? String(route.params.sessionId) : undefined;
   const isAlreadyCompleted = route.params?.isAlreadyCompleted ?? false;
+  const dueCardIds = route.params?.dueCardIds;
 
   const {
     isLoading,
@@ -134,6 +163,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     // ✅ ĐÃ SỬA: Thay đổi dấu "=" lỗi chính tả thành dấu phẩy phân tách thuộc tính destructuring
     showWrongPairsReview,
     proceedAfterReview,
+    showMatchAnswers,
   } = useQuizScreen({
     materialId,
     nodeId,
@@ -141,6 +171,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     quizStepType,
     batchIndex,
     currentNodeIndex,
+    dueCardIds,
     sessionId,
     user: user ?? undefined,
     navigation: {
@@ -149,6 +180,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
       pop: () => console.warn('🛑 [Core Logic] Chặn đứng hành vi tự động pop ngầm từ useQuizScreen.'),
       navigate: (screen: string) => console.warn(`🛑 [Core Logic] Chặn đứng hành vi tự động tự ý nhảy sang màn hình ${screen}`),
     } as any,
+    deductHeartOnFailure: stableDeductHeartOnFailure,
   });
 
   // ĐỒNG BỘ TRẠNG THÁI: Khi câu hỏi cuối cùng chạy xong kích hoạt tấm khiên cục bộ hiển thị Kết quả
@@ -181,8 +213,12 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
               style: 'destructive',
               onPress: () => {
                 setNavigationBlocked(true);
-                executeExitWrapperRef.current();
-              } 
+                // Trừ 1 tim khi thoát bài quiz giữa chừng
+                if (authContext?.deductHeartOnFailure) {
+                  authContext.deductHeartOnFailure();
+                }
+                navigation.dispatch(e.data.action);
+              }
             },
           ],
           'warning'
@@ -203,14 +239,29 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
             await syncStudy({ userId: Number(user.id), materialId, sessionId, currentNodeIndex, nodeCompleted: true });
             shouldRefresh = true;
           }
-          await completeQuizSession({
-            userId: Number(user.id),
-            materialId,
-            sessionType: (nodeType as string) === 'PRACTICE' ? 'PRACTICE' : String(nodeId),
-            batchIndex,
-            totalQuestions: resultTotalCount,
-            correctAnswers: resultCorrectCount,
-          });
+
+          if (nodeType === 'SRS_REVIEW') {
+            // Đối với node ôn tập, map answers thành results mảng điểm để đưa vào SM-2
+            const results = answers.map(a => ({
+              cardId: Number(a.wordId),
+              score: a.isCorrect ? 100 : 0
+            }));
+            await completeSrsReview({
+              userId: Number(user.id),
+              materialId,
+              results,
+            });
+          } else {
+            await completeQuizSession({
+              userId: Number(user.id),
+              materialId,
+              sessionType: (nodeType as string) === 'PRACTICE' ? 'PRACTICE' : String(nodeId),
+              batchIndex,
+              totalQuestions: resultTotalCount,
+              correctAnswers: resultCorrectCount,
+              isAlreadyCompleted,
+            });
+          }
 
           // NẾU LÀ NODE CUỐI CÙNG (FINAL_BOSS) VÀ CHƯA TỪNG HOÀN THÀNH: CỘNG 100XP
           if ((nodeType === 'FINAL_BOSS' || nodeId === 'final-boss') && !isAlreadyCompleted) {
@@ -245,6 +296,10 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
 
   // Logic thực hiện trừ tim cục bộ an toàn khi thất bại
   React.useEffect(() => {
+    const isMatchingMode = quizStepType === 'MATCH_HIRA' || quizStepType === 'MATCH_MEANING';
+    if (isMatchingMode) {
+      return;
+    }
     if (localShowResult && !canContinue && !heartDeducted && !heartDeductionPending) {
       setHeartDeductionPending(true);
       
@@ -298,10 +353,14 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         } catch (err) {
           console.warn('Failed to update streak before exit:', err);
         } finally {
-          navigation.navigate('MainTabs' as any, {
-            screen: 'StudyJourney',
-            params: params,
-          });
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.navigate('MainTabs' as any, {
+              screen: 'StudyJourney',
+              params: params,
+            });
+          }
         }
       })();
     } catch (err) {
@@ -405,7 +464,11 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         
         onCancel={showResult || localShowResult ? () => console.warn('🛑 Chặn hủy tự phát.') : () => {
           // Kích hoạt beforeRemove để hiện popup xác nhận thoát
-          navigation.navigate('MainTabs' as any, { screen: 'StudyJourney', params: { materialId } });
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.navigate('Home');
+          }
         }}
         onCheckInputAnswer={checkInputAnswer}
         onVerifyScrambled={verifyScrambled}
@@ -445,8 +508,31 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         onContinue={safeHandleContinueQuestion}
         showWrongPairsReview={showWrongPairsReview}
         onProceedAfterReview={proceedAfterReview}
+        onShowMatchAnswers={showMatchAnswers}
         leftItemLayouts={leftItemLayouts}
         rightItemLayouts={rightItemLayouts}
+      />
+      <OutOfHeartsInterceptor
+        isVisible={isOutOfHearts}
+        globalHearts={localHearts}
+        totalXp={authContext?.totalXp ?? 0}
+        topUpCount={(authContext as any)?.topUpCount ?? 0}
+        colors={colors}
+        isDark={isDark}
+        themePrimaryColor={themePrimaryColor}
+        themeShadowColor={themeShadowColor}
+        onRefill={async () => {
+          if (authContext) {
+            const newHearts = await refillHeartsWithXp(1, 200);
+            if (typeof newHearts === 'number') {
+              setLocalHearts(newHearts);
+            }
+          }
+          setIsOutOfHearts(false);
+        }}
+        onReturnToRoadmap={executeExitWrapper}
+        onStayOnResult={() => setIsOutOfHearts(false)}
+        onClose={() => setIsOutOfHearts(false)}
       />
     </>
   );
@@ -483,15 +569,19 @@ const OutOfHeartsInterceptor: React.FC<OutOfHeartsInterceptorProps> = ({
   onClose,
 }) => {
   const [isRefilling, setIsRefilling] = React.useState(false);
+
+  // Guard: don't render any Modal tree when not visible
+  if (!isVisible) return null;
   
   const handleRefillPress = async () => {
     setIsRefilling(true);
     try {
       await onRefill();
-      onClose();
+      // onRefill sets isOutOfHearts=false in parent, which unmounts this component.
+      // No further state updates needed here.
     } catch (err) {
       console.warn('Lỗi nạp tim:', err);
-    } finally {
+      // Only reset isRefilling if refill failed (component still mounted)
       setIsRefilling(false);
     }
   };

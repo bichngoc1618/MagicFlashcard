@@ -49,9 +49,7 @@ export const login = async (req, res) => {
     }
 
     const [rows] = await db.query(
-      `SELECT id, username, password_hash, total_xp, streak_count, last_study_date, last_node_completed_date, global_hearts,
-              CASE WHEN last_study_date IS NOT NULL AND last_study_date < CURRENT_DATE() THEN 1 ELSE 0 END AS should_reset_hearts
-       FROM users WHERE email = ?`,
+      'SELECT id, username, password_hash, total_xp, streak_count, last_study_date, last_node_completed_date, global_hearts, avatar_id FROM users WHERE email = ?',
       [email]
     );
     const user = rows[0];
@@ -64,16 +62,29 @@ export const login = async (req, res) => {
       return res.status(401).json({ error: 'Thông tin đăng nhập không hợp lệ.' });
     }
 
+    const getVietnamDateString = (dateObj) => {
+      if (!dateObj) return null;
+      return new Date(dateObj).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+    };
+
+    const todayVnStr = getVietnamDateString(new Date());
+    const lastStudyVnStr = user.last_study_date ? getVietnamDateString(user.last_study_date) : null;
+
+    let shouldResetHearts = 0;
+    if (lastStudyVnStr && lastStudyVnStr < todayVnStr) {
+      shouldResetHearts = 1;
+    }
+
     let finalHearts = user.global_hearts;
     let needsUpdate = false;
 
     // Daily Heart Reset: Only if the stored study date is from a previous day.
-    if (user.should_reset_hearts === 1) {
+    if (shouldResetHearts === 1 && finalHearts < 5) {
       finalHearts = 5;
       needsUpdate = true;
     } else if (user.last_study_date === null) {
-      // First login or no study date yet: preserve DB hearts and only initialize when missing.
-      if (finalHearts === null || finalHearts === undefined) {
+      // First login or no study date yet: preserve DB hearts and only initialize when missing or < 5.
+      if (finalHearts === null || finalHearts === undefined || finalHearts < 5) {
         finalHearts = 5;
         needsUpdate = true;
       }
@@ -112,6 +123,7 @@ export const login = async (req, res) => {
       userId: user.id, 
       username: user.username, 
       email,
+      avatar_id: user.avatar_id,
       total_xp: user.total_xp,
       streak_count: user.streak_count,
       last_study_date: user.last_study_date,
@@ -207,7 +219,7 @@ export const deductHearts = async (req, res) => {
     console.log('⚡ [API] Current hearts in DB:', current);
     if (current <= 0) {
       console.log('⚡ [API] No hearts remaining');
-      return res.status(400).json({ error: 'No hearts remaining', global_hearts: current });
+      return res.json({ success: true, global_hearts: 0 });
     }
 
     const newVal = Math.max(current - Number(amount), 0);

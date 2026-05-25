@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useGlobalUI } from './GlobalUIContext';
 
 import { login as loginApi, register as registerApi, updateGamificationStats, refillHearts, getUserStats, deductHearts, getNotifications } from '../api/api';
@@ -12,6 +13,7 @@ export type UserProfile = {
   streakCount?: number;
   lastStudyDate?: string;
   globalHearts?: number;
+  avatar_id?: string;
 };
 
 type StreakTriggerResult = {
@@ -24,6 +26,7 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<UserProfile>;
   register: (username: string, email: string, password: string) => Promise<UserProfile>;
   logout: () => void;
+  updateUser: (updates: Partial<UserProfile>) => void;
   isLoggedIn: boolean;
   totalXp: number;
   streakCount: number;
@@ -89,6 +92,7 @@ export const AuthProvider = ({ children }: any) => {
       id: result.userId,
       username: result.username,
       email: result.email,
+      avatar_id: result.avatar_id || 'shark_magic',
     };
     setUser(profile);
     setGamificationState(result);
@@ -116,6 +120,16 @@ export const AuthProvider = ({ children }: any) => {
     setStreakCount(0);
     setLastStudyDate('');
     setGlobalHearts(5);
+  };
+
+  const updateUser = (updates: Partial<UserProfile>) => {
+    setUser(prev => {
+      const newUser = prev ? { ...prev, ...updates } : null;
+      if (newUser) {
+        AsyncStorage.setItem('user', JSON.stringify(newUser)).catch(console.error);
+      }
+      return newUser;
+    });
   };
 
   const handleHeartLoss = () => {
@@ -365,6 +379,7 @@ const deductHeartOnFailure = useCallback(async (): Promise<number> => {
         login,
         register,
         logout,
+        updateUser,
         isLoggedIn: !!user,
         totalXp,
         streakCount,

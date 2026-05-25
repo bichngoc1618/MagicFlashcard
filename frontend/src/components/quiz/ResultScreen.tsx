@@ -11,6 +11,7 @@ import { speakTextToSpeech } from '../../utils/tts';
 import { useAuthContext } from '../../context/AuthContext';
 import { useGlobalUI } from '../../context/GlobalUIContext';
 import type { AnswerRecord } from './types';
+import Svg, { Path, Circle } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 
@@ -203,6 +204,221 @@ const ShatteredHeartAnim = () => {
   );
 };
 
+function localShuffle<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+const ITEM_HEIGHT = 52;
+const GAP = 12;
+
+const reviewStyles = StyleSheet.create({
+  matchItem: {
+    borderWidth: 2,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  matchText: {
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+});
+
+function MatchingReview({ answers, colors, isDark }: {
+  answers: AnswerRecord[];
+  colors: any;
+  isDark: boolean;
+}) {
+  const [showCorrectLines, setShowCorrectLines] = React.useState(false);
+
+  const words = React.useMemo(() => {
+    if (answers[0]?.leftItemsOrder) {
+      return answers[0].leftItemsOrder;
+    }
+    return Array.from(new Map(answers.map(ans => [ans.word.id, ans.word])).values());
+  }, [answers]);
+
+  const quizType = answers[0]?.type || 'MATCH_HIRA';
+
+  const rightItems = React.useMemo(() => {
+    if (answers[0]?.rightItemsOrder) {
+      return answers[0].rightItemsOrder;
+    }
+    return localShuffle(words).map(w => ({
+      id: w.id,
+      label: quizType === 'MATCH_HIRA' ? w.hiragana : w.meaning
+    }));
+  }, [words, answers, quizType]);
+
+  const containerWidth = width - 64; // padding horizontal 32
+  const columnWidth = containerWidth * 0.42;
+  const middleGap = containerWidth * 0.16;
+
+  const lines = React.useMemo(() => {
+    return words.map((word, i) => {
+      let targetRightId: string | undefined;
+      let strokeColor = '#58CC02'; // default green
+
+      if (showCorrectLines) {
+        // Draw correct lines
+        targetRightId = word.id;
+      } else {
+        // Draw user lines
+        const ans = answers.find(a => a.wordId === word.id);
+        if (ans && ans.userRightId) {
+          targetRightId = ans.userRightId;
+          strokeColor = ans.isCorrect ? '#58CC02' : '#EF4444';
+        }
+      }
+
+      if (!targetRightId) return null;
+
+      const j = rightItems.findIndex(item => item.id === targetRightId);
+      if (j === -1) return null;
+
+      const x1 = columnWidth;
+      const y1 = i * (ITEM_HEIGHT + GAP) + ITEM_HEIGHT / 2;
+      const x2 = columnWidth + middleGap;
+      const y2 = j * (ITEM_HEIGHT + GAP) + ITEM_HEIGHT / 2;
+
+      return { x1, y1, x2, y2, strokeColor };
+    }).filter(Boolean);
+  }, [words, rightItems, answers, showCorrectLines, columnWidth, middleGap]);
+
+  return (
+    <View style={{ width: '100%', alignItems: 'center', paddingVertical: 10 }}>
+      {/* Toggle Button */}
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => setShowCorrectLines(!showCorrectLines)}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: showCorrectLines ? 'rgba(59, 122, 102, 0.12)' : (isDark ? '#1E293B' : '#F1F5F9'),
+          borderWidth: 1,
+          borderColor: showCorrectLines ? '#3B7A66' : (isDark ? '#334155' : '#E2E8F0'),
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          borderRadius: 14,
+          marginBottom: 20,
+        }}
+      >
+        <Text style={{
+          fontSize: 14,
+          fontWeight: '700',
+          color: showCorrectLines ? '#3B7A66' : colors.text,
+        }}>
+          {showCorrectLines ? '← Hiển thị bài làm của bạn' : '👁️ Hiển thị đáp án đúng'}
+        </Text>
+      </TouchableOpacity>
+
+      <View style={{ flexDirection: 'row', width: containerWidth, position: 'relative' }}>
+        
+        {/* SVG Lines */}
+        <View style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]} pointerEvents="none">
+          <Svg width={containerWidth} height={words.length * (ITEM_HEIGHT + GAP)}>
+            {lines.map((line, idx) => (
+              <React.Fragment key={`line-${idx}`}>
+                <Path
+                  d={`M ${line!.x1} ${line!.y1} C ${line!.x1 + 25} ${line!.y1}, ${line!.x2 - 25} ${line!.y2}, ${line!.x2} ${line!.y2}`}
+                  stroke={line!.strokeColor}
+                  strokeWidth={3.5}
+                  strokeLinecap="round"
+                  fill="none"
+                />
+                <Circle cx={line!.x1} cy={line!.y1} r={4.5} fill={line!.strokeColor} />
+                <Circle cx={line!.x2} cy={line!.y2} r={4.5} fill={line!.strokeColor} />
+              </React.Fragment>
+            ))}
+          </Svg>
+        </View>
+
+        {/* Left Column */}
+        <View style={{ width: columnWidth, zIndex: 2 }}>
+          {words.map((word, i) => {
+            let borderColor = '#58CC02';
+            if (!showCorrectLines) {
+              const ans = answers.find(a => a.wordId === word.id);
+              if (ans) {
+                borderColor = ans.isCorrect ? '#58CC02' : '#EF4444';
+              } else {
+                borderColor = colors.border;
+              }
+            }
+            return (
+              <View
+                key={`left-${word.id}`}
+                style={[
+                  reviewStyles.matchItem,
+                  {
+                    height: ITEM_HEIGHT,
+                    marginBottom: GAP,
+                    backgroundColor: colors.card,
+                    borderColor: borderColor,
+                  }
+                ]}
+              >
+                <Text style={[reviewStyles.matchText, { color: colors.text }]} numberOfLines={1}>
+                  {word.kanji || word.hiragana}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Middle Spacer */}
+        <View style={{ width: middleGap }} />
+
+        {/* Right Column */}
+        <View style={{ width: columnWidth, zIndex: 2 }}>
+          {rightItems.map((item, i) => {
+            let borderColor = '#58CC02';
+            if (!showCorrectLines) {
+              const ans = answers.find(a => a.userRightId === item.id);
+              if (ans) {
+                borderColor = (ans.wordId === item.id) ? '#58CC02' : '#EF4444';
+              } else {
+                borderColor = colors.border;
+              }
+            }
+            return (
+              <View
+                key={`right-${item.id}`}
+                style={[
+                  reviewStyles.matchItem,
+                  {
+                    height: ITEM_HEIGHT,
+                    marginBottom: GAP,
+                    backgroundColor: colors.card,
+                    borderColor: borderColor,
+                  }
+                ]}
+              >
+                <Text style={[reviewStyles.matchText, { color: colors.text }]} numberOfLines={1}>
+                  {item.label}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+
+      </View>
+    </View>
+  );
+}
+
 interface ResultScreenProps {
   score: number;
   displayScore?: number;
@@ -242,9 +458,10 @@ export default function ResultScreen({
   const { showAlert } = useGlobalUI();
 
   const failedAnswers = answers.filter((ans) => !ans.isCorrect);
+  const isMatchMode = answers.some(ans => ans.type === 'MATCH_HIRA' || ans.type === 'MATCH_MEANING');
   const displayedScore = displayScore ?? score;
   const passedThreshold = canContinue;
-  const canRetry = score > 0;
+  const canRetry = true;
 
   useEffect(() => {
     if (!passedThreshold) {
@@ -271,7 +488,7 @@ export default function ResultScreen({
   }, [passedThreshold, showStreakCelebration, isBoss]);
 
   const handleShowFailed = () => {
-    if (failedAnswers.length === 0) {
+    if (failedAnswers.length === 0 && !isMatchMode) {
       showAlert('Thông báo 🎉', 'Tuyệt vời! Bạn đã trả lời đúng tất cả các câu hỏi.', undefined, 'success');
       return;
     }
@@ -292,6 +509,7 @@ export default function ResultScreen({
   const themeShadowColor = isDark ? '#193D32' : '#275245';
 
   // --- CHẾ ĐỘ XEM LẠI LỖI SAI DẠNG LIST VOCABULARY TINH GỌN ---
+
   if (showingFailed && failedAnswers.length > 0) {
     return (
       <ScreenContainer>
@@ -304,41 +522,57 @@ export default function ResultScreen({
             >
               <X size={18} color={colors.text} />
             </TouchableOpacity>
-            <Text style={[styles.reviewTitle, { color: colors.text }]}>Danh sách câu sai</Text>
+            <Text style={[styles.reviewTitle, { color: colors.text }]}>
+              {isMatchMode ? 'Đáp án đúng nối từ' : 'Danh sách câu sai'}
+            </Text>
             <View style={{ width: 42 }} /> 
           </View>
 
           {/* List Vocabulary cuộn phẳng chuyên nghiệp */}
-          <ScrollView 
-            style={styles.reviewListScroll} 
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
-            {failedAnswers.map((item, idx) => (
-              <View key={item.word.id || idx} style={[styles.listItem, { borderColor: isDark ? '#1E293B' : '#F1F5F9', backgroundColor: colors.card }]}>
-                <Text style={[styles.listIndex, { color: themePrimaryColor }]}>{idx + 1}.</Text>
-                
-                <View style={styles.listTextContainer}>
-                  <Text style={[styles.listText, { color: colors.text }]}>
-                    {item.word.kanji || item.word.hiragana || '—'}
-                  </Text>
-                  <Text style={[styles.listSubText, { color: colors.textSecondary }]}>
-                    {item.word.hiragana ? `${item.word.hiragana} — ` : ''}{item.word.meaning || 'Không có dữ liệu'}
-                  </Text>
-                </View>
+          {isMatchMode ? (
+            <ScrollView 
+              style={styles.reviewListScroll} 
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              <MatchingReview
+                answers={answers}
+                colors={colors}
+                isDark={isDark}
+              />
+            </ScrollView>
+          ) : (
+            <ScrollView 
+              style={styles.reviewListScroll} 
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              {failedAnswers.map((item, idx) => (
+                <View key={item.word.id || idx} style={[styles.listItem, { borderColor: isDark ? '#1E293B' : '#F1F5F9', backgroundColor: colors.card }]}>
+                  <Text style={[styles.listIndex, { color: themePrimaryColor }]}>{idx + 1}.</Text>
+                  
+                  <View style={styles.listTextContainer}>
+                    <Text style={[styles.listText, { color: colors.text }]}>
+                      {item.word.kanji || item.word.hiragana || '—'}
+                    </Text>
+                    <Text style={[styles.listSubText, { color: colors.textSecondary }]}>
+                      {item.word.hiragana ? `${item.word.hiragana} — ` : ''}{item.word.meaning || 'Không có dữ liệu'}
+                    </Text>
+                  </View>
 
-                {item.word.hiragana && (
-                  <TouchableOpacity 
-                    activeOpacity={0.7}
-                    onPress={() => playSound(item.word.hiragana)}
-                    style={[styles.miniSoundBtn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}
-                  >
-                    <Volume2 size={16} color={themePrimaryColor} />
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
-          </ScrollView>
+                  {item.word.hiragana && (
+                    <TouchableOpacity 
+                      activeOpacity={0.7}
+                      onPress={() => playSound(item.word.hiragana)}
+                      style={[styles.miniSoundBtn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}
+                    >
+                      <Volume2 size={16} color={themePrimaryColor} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          )}
 
           {/* Nút quay lại đổ khối 3D */}
           <View style={[styles.btn3DWrapper, { marginTop: 12 }]}>
@@ -455,7 +689,7 @@ export default function ResultScreen({
 
           {/* Khối cụm nút bấm hành động */}
           <View style={styles.actionButtonGroup}>
-            {failedAnswers.length > 0 && (
+            {(failedAnswers.length > 0 || isMatchMode) && (
               <TouchableOpacity 
                 activeOpacity={0.8}
                 onPress={handleShowFailed} 
@@ -463,7 +697,7 @@ export default function ResultScreen({
               >
                 <Eye size={16} color={themePrimaryColor} />
                 <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-                  Xem lại câu sai ({failedAnswers.length})
+                  {isMatchMode ? 'Xem lại bài làm ghép cặp' : `Xem lại câu sai (${failedAnswers.length})`}
                 </Text>
               </TouchableOpacity>
             )}

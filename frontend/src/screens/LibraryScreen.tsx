@@ -186,8 +186,7 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
       >
         {/* HEADER SEARCH */}
         <AppHeaderSearch
-          displayName={user?.username || 'User'}
-          mascotSource={require('../../assets/sharkMagic.png')}
+          displayName={user?.username || 'Học viên'}
           searchText={searchText}
           onChangeSearchText={setSearchText}
           onSubmitSearch={() => {

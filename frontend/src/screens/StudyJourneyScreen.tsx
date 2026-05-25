@@ -32,6 +32,7 @@ import {
   Puzzle,
   ListTodo,
   Keyboard,
+  RefreshCcw,
 } from 'lucide-react-native';
 
 import { StackScreenProps } from '@react-navigation/stack';
@@ -80,6 +81,7 @@ const getJourneyBackgroundColors = (isDark: boolean): readonly [string, string, 
 
 const getNodeColor = (type: string, isDark: boolean) => {
   if (type === 'FINAL_BOSS') return isDark ? '#D97706' : '#F59E0B';
+  if (type === 'SRS_REVIEW') return isDark ? '#D97706' : '#FBBF24'; // Màu vàng kim cho Ôn Tập
   return isDark ? '#458571' : '#58A68E';
 };
 
@@ -92,6 +94,7 @@ const getNodeIcon = (type: string, color: string = 'white') => {
     case 'MULTICHOICE': return <Puzzle {...props} />;
     case 'SPELLING': return <Keyboard {...props} />;
     case 'REVIEW': return <ListTodo {...props} />;
+    case 'SRS_REVIEW': return <Star {...props} size={30} fill={color} />;
     case 'FINAL_BOSS':
       return <Star size={36} color={color === 'white' ? '#FFD700' : color} fill={color === 'white' ? '#FFD700' : 'transparent'} />;
     default: return <Star {...props} />;
@@ -134,6 +137,7 @@ const handleNodePress = async (
     if (type === 'MATCHING_MEANING') return 'MATCH_MEANING';
     if (type === 'SPELLING') return 'SCRAMBLED_HIRA';
     if (type === 'MULTICHOICE') return 'MULTIPLE_CHOICE';
+    if (type === 'SRS_REVIEW') return 'MULTIPLE_CHOICE'; // Mặc định SRS Review là trắc nghiệm hoặc có thể random bên trong Quiz
     return type;
   };
 
@@ -141,6 +145,7 @@ const handleNodePress = async (
     materialId,
     flashcardId: String(materialId),
     nodeId: String(node.id),
+    dueCardIds: node.dueCardIds,
     groupIndex: node.batchIndex ?? 0,
     subStepIndex: 0,
     nodeType: node.nodeType,
@@ -262,7 +267,9 @@ const NodeItem = React.memo(
 
     const shadow3DColor = isLocked
       ? (isDark ? '#273138' : '#94A3B8')
-      : (node.nodeType === 'FINAL_BOSS' ? (isDark ? '#9A3412' : '#B45309') : (isDark ? '#2E5B4E' : '#417D6B'));
+      : (node.nodeType === 'FINAL_BOSS' ? (isDark ? '#9A3412' : '#B45309') 
+         : node.nodeType === 'SRS_REVIEW' ? (isDark ? '#B45309' : '#D97706') 
+         : (isDark ? '#2E5B4E' : '#417D6B'));
 
     return (
       <View
@@ -371,7 +378,7 @@ export default function StudyJourneyScreen({
   route,
   navigation,
 }: StudyJourneyScreenProps) {
-  const { user, globalHearts, totalXp, refillHeartsWithXp, topUpCount, notificationCount, refreshNotificationCount } = useAuthContext();
+  const { user, globalHearts, totalXp, refillHeartsWithXp, topUpCount, notificationCount, refreshNotificationCount, refreshUserStats } = useAuthContext();
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -589,7 +596,8 @@ export default function StudyJourneyScreen({
     useCallback(() => {
       loadJourney();
       refreshNotificationCount();
-    }, [loadJourney, refreshNotificationCount]),
+      refreshUserStats();
+    }, [loadJourney, refreshNotificationCount, refreshUserStats]),
   );
 
   useEffect(() => {
@@ -629,7 +637,6 @@ export default function StudyJourneyScreen({
         >
           <AppHeaderSearch
             displayName={user?.username || 'Bạn học'}
-            mascotSource={mascotSource}
             searchText={searchText}
             onChangeSearchText={setSearchText}
             onSubmitSearch={() =>

@@ -58,10 +58,10 @@ function AnimatedTab({
         <View style={styles.iconContainer}>
           {icon}
         </View>
-        <Text 
+        <Text
           style={[
-            styles.label, 
-            active ? styles.labelActive : styles.labelInactive, 
+            styles.label,
+            active ? styles.labelActive : styles.labelInactive,
             { color: active ? themePrimaryColor : colors.textSecondary }
           ]}
         >
@@ -81,11 +81,11 @@ export default function BottomNavigation(props: any) {
 
   const globalNavigation = useNavigation<any>();
 
-  const activeRouteName = state ? state.routes[state.index].name : 
-                          activeTab === 'study' ? 'Study' :
-                          activeTab === 'profile' ? 'Profile' : 
-                          activeTab === 'home' ? 'Home' : 
-                          activeTab === 'SpeakingPractice' ? 'SpeakingPractice' : '';
+  const activeRouteName = state ? state.routes[state.index].name :
+    activeTab === 'study' ? 'Study' :
+      activeTab === 'profile' ? 'Profile' :
+        activeTab === 'home' ? 'Home' :
+          activeTab === 'SpeakingPractice' ? 'SpeakingPractice' : '';
 
   const handleNavigate = (screenName: string, params?: any) => {
     if (tabNavigation) {
@@ -118,7 +118,7 @@ export default function BottomNavigation(props: any) {
       paddingVertical: 12,
       paddingHorizontal: 8,
       borderWidth: 1,
-      borderColor: isDark ? '#1E293B' : '#F1F5F9',
+      borderColor: isDark ? '#1E293B' : '#fdfdfdff',
       ...Platform.select({
         ios: { shadowColor: '#000', shadowOpacity: isDark ? 0.25 : 0.03, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
         android: { elevation: 4 },

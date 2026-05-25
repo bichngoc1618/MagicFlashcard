@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFlashcards, updateProgress, completeQuizNode, syncStudy } from '../api/api';
 import type { QuizType, QuizWord, AnswerRecord } from '../components/quiz/types';
 import { chunkVocabulary } from '../utils/journeyMap';
+import { useGlobalUI } from '../context/GlobalUIContext';
 
 const DEFAULT_DISTRACTORS: QuizWord[] = [
   { id: 'distractor-1', kanji: '先生', hiragana: 'せんせい', meaning: 'giáo viên' },
@@ -61,10 +62,12 @@ type UseQuizScreenParams = {
   quizStepType?: QuizType;
   batchIndex: number;
   currentNodeIndex?: number;
+  dueCardIds?: number[];
   sessionId?: string;
   user?: { id?: string | number };
   navigation: StackNavigationProp<RootStackParamList, 'Quiz'>;
-  deductHeartOnFailure?: () => Promise<void> | void;
+  deductHeartOnFailure?: () => Promise<number> | number;
+  isAlreadyCompleted?: boolean;
 };
 
 type UseQuizScreenResult = {
@@ -142,6 +145,7 @@ type UseQuizScreenResult = {
   showWrongPairsReview: boolean;
   setShowWrongPairsReview: (show: boolean) => void;
   proceedAfterReview: () => void;
+  showMatchAnswers: () => void;
 };
 
 const PRACTICE_STEPS: QuizType[] = ['MATCH_HIRA', 'MATCH_MEANING', 'MULTIPLE_CHOICE', 'SCRAMBLED_HIRA', 'WRITE_HIRA'];
@@ -245,11 +249,16 @@ export default function useQuizScreen({
   quizStepType,
   batchIndex,
   currentNodeIndex,
+  dueCardIds,
   sessionId,
   user,
   navigation,
   deductHeartOnFailure,
+  isAlreadyCompleted,
 }: UseQuizScreenParams): UseQuizScreenResult {
+  const { showAlert } = useGlobalUI();
+  const [matchAttempts, setMatchAttempts] = useState(0);
+  const [retryCount, setRetryCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [words, setWords] = useState<QuizWord[]>([]);
@@ -314,7 +323,7 @@ export default function useQuizScreen({
     try {
       const response = await getFlashcards(materialId, user?.id ? Number(user.id) : undefined);
       const flashcards = response.flashcards || [];
-      const normalizedWords = flashcards
+      let normalizedWords = flashcards
         .map((card: any) => ({
           id: String(card.id),
           kanji: card.kanji || '',
@@ -323,6 +332,11 @@ export default function useQuizScreen({
           is_learned: card.is_learned,
         }))
         .filter((word: QuizWord) => word.hiragana && word.meaning);
+        
+      if (dueCardIds && dueCardIds.length > 0) {
+        normalizedWords = normalizedWords.filter((word: QuizWord) => dueCardIds.includes(Number(word.id)));
+      }
+      
       setWords(normalizedWords);
     } catch (error) {
       console.warn('Lỗi lấy dữ liệu quiz:', error);
@@ -344,7 +358,7 @@ export default function useQuizScreen({
   const batchWords = useMemo<QuizWord[]>(() => {
     if (words.length === 0) return [];
 
-    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'SRS_REVIEW') {
       return shuffle(words).slice(0, Math.min(words.length, 50));
     }
 
@@ -571,6 +585,21 @@ export default function useQuizScreen({
   const pairedRightIds = useMemo(() => new Set(Object.values(pairAssignments)), [pairAssignments]);
 
   const isMatchMode = activeType === 'MATCH_MEANING' || activeType === 'MATCH_HIRA';
+
+  const hasShownMatchRuleAlert = useRef(false);
+
+  useEffect(() => {
+    if (isMatchMode && matchRound === 0 && !hasShownMatchRuleAlert.current) {
+      hasShownMatchRuleAlert.current = true;
+      showAlert(
+        'Luật chơi ghép cặp',
+        'Bạn có 3 cơ hội ghép sai. Nếu sai quá 3 lần, bạn sẽ bị trừ 1 tim nhé!',
+        [{ text: 'Đã hiểu' }],
+        'info'
+      );
+    }
+  }, [isMatchMode, matchRound, showAlert]);
+
   const stepProgress = isMatchMode ? (matchRound / matchRoundCount) * 100 : (totalCount ? (questionIndex / totalCount) * 100 : 0);
   const totalMatchCount = matchWords.length;
   const isMatchComplete = isMatchMode && currentMatchWords.length > 0 && Object.keys(pairAssignments).length === currentMatchWords.length;
@@ -613,8 +642,10 @@ export default function useQuizScreen({
   }, [clearTimer, handleCheck, hasSubmitted, timerSeconds]);
 
   const evaluateMatchRound = useCallback(
-    (force = false) => {
+    async (force = false) => {
       if (!isMatchComplete && !force) return;
+      if (hasSubmitted) return;
+      setHasSubmitted(true);
 
       const nextWrongPairs = new Set<string>();
       const nextMatchedIds = new Set<string>();
@@ -633,7 +664,7 @@ export default function useQuizScreen({
           correctCount += 1;
           nextMatchedIds.add(leftWord.id);
         } else {
-          nextWrongPairs.add(`${leftWord.id}-${rightId ?? 'NONE'}`);
+          nextWrongPairs.add(`${leftWord.id}_||_${rightId ?? 'NONE'}`);
         }
       });
 
@@ -641,20 +672,74 @@ export default function useQuizScreen({
         ? Math.round((correctCount / currentMatchWords.length) * 100)
         : 0;
 
-      const passed = score >= 70;
+      const hasErrors = nextWrongPairs.size > 0;
+      const passed = score >= 80;
 
-      setWrongPairs(nextWrongPairs);
-      setMatchedIds(nextMatchedIds);
-      setMatchRoundScore(score);
-      setHasSubmitted(true);
-      setIsCorrect(passed);
-      setFeedbackMessage(passed ? 'Đạt yêu cầu!' : 'Chưa đạt 70%, làm lại đợt này nhé.');
+      if (hasErrors) {
+        const nextAttempts = matchAttempts + 1;
+        setMatchAttempts(nextAttempts);
 
-      if (passed && matchRound === matchRoundCount - 1) {
-        handleCheckAnswer(true, 'MATCH_COMPLETE');
+        if (nextAttempts >= 3) {
+          // nextAttempts >= 3
+          let remainingHearts = -1;
+          if (deductHeartOnFailure) {
+            try {
+              remainingHearts = await deductHeartOnFailure();
+            } catch (err) {
+              console.warn('Lỗi trừ tim khi nối sai:', err);
+            }
+          }
+          // Only show alert if hearts are NOT depleted to avoid
+          // two Modal components stacking (OutOfHeartsInterceptor handles 0 hearts)
+          if (remainingHearts > 0 || remainingHearts === -1) {
+            showAlert(
+              'Thông báo',
+              'Bạn đã nối sai 3 lần! Bạn bị trừ 1 tim.',
+              [{ text: 'OK' }],
+              'warning'
+            );
+          }
+          
+          setWrongPairs(nextWrongPairs);
+          setMatchedIds(nextMatchedIds);
+          setMatchRoundScore(score);
+          setIsCorrect(passed);
+          return;
+        }
+
+        // CẢI TIẾN: Chỉ đánh dấu sai và xoá các cặp sai thay vì kết thúc ván nếu chưa quá 3 lần
+        if (nextAttempts < 3) {
+          setMatchedIds(nextMatchedIds); // <-- Quan trọng: cập nhật cặp đúng
+          setWrongPairs(nextWrongPairs);
+          // Wait 1.5s then clear the wrong pairs so user can try again
+          setTimeout(() => {
+            setPairAssignments(prev => {
+              const next = { ...prev };
+              nextWrongPairs.forEach(wp => {
+                const leftId = wp.split('_||_')[0];
+                delete next[leftId];
+              });
+              return next;
+            });
+            setWrongPairs(new Set());
+            setHasSubmitted(false); // <--- QUAN TRỌNG: Mở khóa tương tác
+          }, 1500);
+          return; // Do NOT submit yet
+        }
+      } else {
+        setMatchAttempts(0);
+        setWrongPairs(nextWrongPairs);
+        setMatchedIds(nextMatchedIds);
+        setMatchRoundScore(score);
+        setIsCorrect(passed);
+        setFeedbackMessage(passed ? 'Đạt yêu cầu!' : 'Chưa đạt 80%, làm lại đợt này nhé.');
+
+        if (passed && matchRound === matchRoundCount - 1) {
+          handleCheckAnswer(true, 'MATCH_COMPLETE');
+        }
       }
     },
-    [activeType, currentMatchWords, isMatchComplete, pairAssignments, handleCheckAnswer, matchRound, matchRoundCount],
+    [activeType, currentMatchWords, isMatchComplete, pairAssignments, handleCheckAnswer, matchRound, matchRoundCount, matchAttempts, deductHeartOnFailure, showAlert, hasSubmitted],
   );
 
   const handleTimerExpire = useCallback(async () => {
@@ -732,6 +817,7 @@ export default function useQuizScreen({
     setWrongPair(false);
     setPairAssignments({});
     setPairAttempts(0);
+    setMatchAttempts(0);
     setMatchRoundScore(0);
     setHasSubmitted(false);
     setIsTimeUp(false);
@@ -750,6 +836,7 @@ export default function useQuizScreen({
     setWrongPair(false);
     setPairAssignments({});
     setPairAttempts(0);
+    setMatchAttempts(0);
     setTotalPairAttempts(0);
     setTotalMatchedPairs(0);
     setMatchRoundScore(0);
@@ -857,6 +944,17 @@ export default function useQuizScreen({
 
   const handlePairSelection = useCallback(
     (leftId: string, rightId: string) => {
+      if (hasSubmitted || wrongPairs.size > 0) return;
+
+      if (rightId === 'UNLINK' || rightId.startsWith('UNLINK_RIGHT:')) {
+        setPairAssignments((prev) => {
+          const next = { ...prev };
+          delete next[leftId];
+          return next;
+        });
+        return;
+      }
+
       if (pairAssignments[leftId] || pairedRightIds.has(rightId)) return;
       const leftWord = currentMatchWords.find((word) => word.id === leftId);
       const rightWord = currentMatchWords.find((word) => word.id === rightId);
@@ -869,13 +967,28 @@ export default function useQuizScreen({
       setSelectedLeftId(null);
       setSelectedRightId(null);
     },
-    [currentMatchWords, pairAssignments, pairedRightIds],
+    [currentMatchWords, pairAssignments, pairedRightIds, hasSubmitted, wrongPairs.size],
   );
 
   const handleResetMatchState = useCallback(() => {
     resetMatchStateForQuestion();
     setIsCorrect(null);
   }, [resetMatchStateForQuestion]);
+
+  const showMatchAnswers = useCallback(() => {
+    const correctAssignments: Record<string, string> = {};
+    const correctIds = new Set<string>();
+
+    currentMatchWords.forEach((word) => {
+      correctAssignments[word.id] = word.id;
+      correctIds.add(word.id);
+    });
+
+    setPairAssignments(correctAssignments);
+    setWrongPairs(new Set());
+    setMatchedIds(correctIds);
+    setHasSubmitted(true);
+  }, [currentMatchWords]);
 
   // CRITICAL FIX 4: Thay đổi cơ chế chuyển Step. Khi hoàn thành toàn bộ bài,
   // hook CHỈ làm duy nhất một việc là chuyển trạng thái showResult sang TRUE.
@@ -990,5 +1103,6 @@ export default function useQuizScreen({
     showWrongPairsReview,
     setShowWrongPairsReview,
     proceedAfterReview,
+    showMatchAnswers,
   };
 }

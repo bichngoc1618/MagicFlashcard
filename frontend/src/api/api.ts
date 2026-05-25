@@ -344,6 +344,7 @@ export const completeQuizSession = async (payload: {
   batchIndex: number;
   totalQuestions: number;
   correctAnswers: number;
+  isAlreadyCompleted?: boolean;
 }) => {
   return request('/api/progress/complete-quiz', {
     method: 'POST',
@@ -355,6 +356,7 @@ export const completeFlashcardBatch = async (payload: {
   userId: number;
   materialId: number;
   batchIndex: number;
+  isAlreadyCompleted?: boolean;
 }) => {
   return request('/api/flashcard/complete', {
     method: 'POST',
@@ -370,8 +372,20 @@ export const completeQuizNode = async (payload: {
   batchIndex?: number;
   totalQuestions?: number;
   correctAnswers?: number;
+  isAlreadyCompleted?: boolean;
 }) => {
   return request('/api/quiz/complete-node', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+};
+
+export const completeSrsReview = async (payload: {
+  userId: number;
+  materialId: number;
+  results: { cardId: number; score: number }[];
+}) => {
+  return request('/api/progress/srs-review', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

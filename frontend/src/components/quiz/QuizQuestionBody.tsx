@@ -377,7 +377,7 @@ export default function QuizQuestionBody({
     useState({ left: 0, right: 0 });
 
   const showMatchResults =
-    (hasSubmitted || isTimeUp) &&
+    (hasSubmitted || isTimeUp || wrongPairs.size > 0) &&
     (activeType === 'MATCH_HIRA' ||
       activeType === 'MATCH_MEANING');
 
@@ -450,7 +450,7 @@ export default function QuizQuestionBody({
           return null;
         }
 
-        const pairKey = `${leftId}-${rightId}`;
+        const pairKey = `${leftId}_||_${rightId}`;
 
         const isWrong =
           wrongPairs.has(pairKey);
@@ -774,19 +774,21 @@ export default function QuizQuestionBody({
                       >
                         <TouchableOpacity
                           activeOpacity={0.85}
-                          disabled={hasSubmitted}
+                          disabled={hasSubmitted || wrongPairs.size > 0}
                           onPress={() => {
-                            if (selectedRightId) {
+                            if (isAssigned) {
+                              onHandlePairSelection(word.id, 'UNLINK');
+                            } else if (selectedRightId) {
                               onHandlePairSelection(word.id, selectedRightId);
                             } else {
-                              onSetSelectedLeftId(word.id);
+                              onSetSelectedLeftId(selectedLeftId === word.id ? null : word.id);
                             }
                           }}
                           style={[
                             styles.matchItem,
                             isSelected && styles.matchSelected,
                             isAssigned && !showMatchResults && styles.matchAssigned,
-                            isMatched && styles.matchCorrect,
+                            isMatched && showMatchResults && styles.matchCorrect,
                             showMatchResults && !isMatched && styles.matchWrong,
                           ]}
                         >
@@ -841,14 +843,19 @@ export default function QuizQuestionBody({
                           0.85
                         }
                         disabled={
-                          hasSubmitted
+                          hasSubmitted || wrongPairs.size > 0
                         }
                         onLayout={(e) => {
                           const layout = e.nativeEvent.layout;
                           handleLayout('right', item.id, layout);
                         }}
                         onPress={() => {
-                          if (
+                          if (isAssigned) {
+                            const leftId = Object.keys(pairAssignments).find(key => pairAssignments[key] === item.id);
+                            if (leftId) {
+                              onHandlePairSelection(leftId, 'UNLINK_RIGHT:' + item.id);
+                            }
+                          } else if (
                             selectedLeftId
                           ) {
                             onHandlePairSelection(
@@ -857,7 +864,7 @@ export default function QuizQuestionBody({
                             );
                           } else {
                             onSetSelectedRightId(
-                              item.id
+                              selectedRightId === item.id ? null : item.id
                             );
                           }
                         }}

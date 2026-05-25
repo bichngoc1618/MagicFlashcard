@@ -28,9 +28,12 @@ import {
   completeFlashcardBatch,
   completeQuizNode,
   getProfileAnalytics,
+  completeSrsReview,
   getHomeWrongWords,
   updateNodeIndex,
   getLearnedCards,
+  updateProfile,
+  addXp,
 } from '../controllers/progressController.js';
 import { register, login, updateGamificationStats, refillHearts, deductHearts } from '../controllers/authController.js';
 import db from '../config/db.js';
@@ -60,7 +63,9 @@ router.post('/notifications/mark-read', markNotificationsRead);
 // New progress tracking endpoints
 router.get('/progress/study-path/:userId/:materialId', getStudyPath);
 router.get('/profile/:userId', getProfileOverview);
+router.put('/profile/:userId', updateProfile);
 router.get('/profile/:userId/analytics', getProfileAnalytics);
+router.post('/progress/:userId/add-xp', addXp);
 router.get('/home/:userId/wrong-words', getHomeWrongWords);
 router.post('/progress/mark-learned', markCardLearned);
 router.post('/progress/update', markCardLearned);
@@ -72,6 +77,7 @@ router.post('/progress/save-quiz-answer', saveQuizAnswer);
 router.post('/progress/update-node-index', updateNodeIndex);
 router.post('/flashcard/complete', completeFlashcardBatch);
 router.post('/quiz/complete-node', completeQuizNode);
+router.post('/progress/srs-review', completeSrsReview);
 router.post('/gamification/update', updateGamificationStats);
 router.post('/gamification/refill', refillHearts);
 router.post('/gamification/deduct', deductHearts);

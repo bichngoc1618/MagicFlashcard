@@ -61,13 +61,14 @@ export type RootStackParamList = {
     nodeId: string;
     groupIndex: number;
     subStepIndex: number;
-    nodeType?: 'QUIZ_GROUP' | 'MINI_QUIZ' | 'REVIEW' | 'FINAL_BOSS' | 'FINAL_EXAM';
+    nodeType?: 'QUIZ_GROUP' | 'MINI_QUIZ' | 'REVIEW' | 'FINAL_BOSS' | 'FINAL_EXAM' | 'SRS_REVIEW';
     quizStepType?: 'MATCH_MEANING' | 'MATCH_HIRA' | 'MULTIPLE_CHOICE' | 'SCRAMBLED_HIRA' | 'WRITE_HIRA';
     chunkStart?: number;
     chunkSize?: number;
     learnedCount?: number;
     sessionId?: number;
     isAlreadyCompleted?: boolean;
+    dueCardIds?: number[];
   };
 };
 const Stack = createStackNavigator<RootStackParamList>();

@@ -11,18 +11,12 @@ const QUIZ_STEP_OFFSETS = {
 };
 
 const getSeparatedTotalBatches = (totalCards, learnedCards) => {
-  const learnedCount = Number(learnedCards) || 0;
-  const unlearnedCount = Math.max(0, (Number(totalCards) || 0) - learnedCount);
-  
-  const getHelperBatches = (count) => {
-    if (!count || count <= 0) return 0;
-    const numFullChunks = Math.floor(count / CHUNK_SIZE);
-    const remainder = count % CHUNK_SIZE;
-    if (numFullChunks === 0) return 1;
-    return remainder >= 6 ? numFullChunks + 1 : numFullChunks;
-  };
-  
-  return getHelperBatches(learnedCount) + getHelperBatches(unlearnedCount);
+  const count = Number(totalCards) || 0;
+  if (!count || count <= 0) return 0;
+  const numFullChunks = Math.floor(count / CHUNK_SIZE);
+  const remainder = count % CHUNK_SIZE;
+  if (numFullChunks === 0) return 1;
+  return remainder >= 6 ? numFullChunks + 1 : numFullChunks;
 };
 
 const chunkVocabularyHelper = (vocabList) => {
@@ -71,13 +65,7 @@ const chunkVocabularyHelper = (vocabList) => {
 };
 
 const chunkVocabulary = (vocabList) => {
-  const learned = vocabList.filter((item) => item && item.is_learned === 1);
-  const unlearned = vocabList.filter((item) => !item || item.is_learned !== 1);
-
-  const chunksLearned = chunkVocabularyHelper(learned);
-  const chunksUnlearned = chunkVocabularyHelper(unlearned);
-
-  return [...chunksLearned, ...chunksUnlearned];
+  return chunkVocabularyHelper(vocabList);
 };
 
 const getSortedAndChunkedFlashcards = async (userId, materialId) => {
@@ -93,7 +81,7 @@ const getSortedAndChunkedFlashcards = async (userId, materialId) => {
      LEFT JOIN user_flashcard_progress ufp
        ON ufp.flashcard_id = f.id AND ufp.user_id = ?
      WHERE f.material_id = ?
-     ORDER BY COALESCE(ufp.is_learned, 0) DESC, f.id ASC`,
+     ORDER BY f.id ASC`,
     [userId, materialId]
   );
   return chunkVocabulary(flashcards);
@@ -307,11 +295,14 @@ export const getStudyPath = async (req, res) => {
     const totalBatches = getSeparatedTotalBatches(totalCards, learnedCount);
 
     const journeyNodes = generateJourneyNodes(totalBatches);
-    const totalNodes = journeyNodes.length;
-    const completedNodes = Math.min(Math.max(Number(currentCardIndex) || 0, 0), totalNodes);
-    const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
 
     const currentActiveNodeIndex = Math.max(0, Number(currentCardIndex) || 0);
+
+
+
+    const totalNodes = journeyNodes.length;
+    const completedNodes = Math.min(currentActiveNodeIndex, totalNodes);
+    const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
 
     return res.json({
       material,
@@ -340,6 +331,7 @@ export const getProfileOverview = async (req, res) => {
     const [userRows] = await db.query(
       `SELECT
          u.username,
+         u.avatar_id,
          u.total_xp,
          COALESCE((SELECT SUM(duration) FROM user_study_sessions WHERE user_id = ?), 0) AS total_time
        FROM users u
@@ -420,6 +412,7 @@ export const getProfileOverview = async (req, res) => {
       user,
       username: user.username,
       email: user.email,
+      avatar_id: user.avatar_id,
       total_xp: Number(user.total_xp ?? 0),
       streak_count: calculatedStreak,
       total_time: Number(user.total_time ?? 0),
@@ -440,7 +433,7 @@ export const getProfileAnalytics = async (req, res) => {
     }
 
     const [userRows] = await db.query(
-      `SELECT username, email, COALESCE(total_xp, 0) AS total_xp
+      `SELECT username, email, COALESCE(total_xp, 0) AS total_xp, avatar_id
        FROM users
        WHERE id = ?`,
       [userId]
@@ -485,6 +478,14 @@ export const getProfileAnalytics = async (req, res) => {
       [userId]
     );
     const totalAnswers = Number(answersRows[0]?.total_answers ?? 0);
+
+    const [nodeRows] = await db.query(
+      `SELECT COALESCE(SUM(current_card_index), 0) AS total_nodes
+       FROM learning_path
+       WHERE user_id = ?`,
+      [userId]
+    );
+    const completedNodes = Number(nodeRows[0]?.total_nodes ?? 0);
 
     const [totalCardsRows] = await db.query(
       `SELECT COUNT(f.id) AS total_cards
@@ -602,13 +603,23 @@ export const getProfileAnalytics = async (req, res) => {
       }
     });
 
+    const [todayQuizRows] = await db.query(
+      `SELECT COUNT(*) AS count
+       FROM quiz_sessions
+       WHERE user_id = ? AND DATE(completed_at) = CURDATE()`,
+      [userId]
+    );
+    const todayQuizCount = Number(todayQuizRows[0]?.count ?? 0);
+
     return res.json({
       username: user.username,
       email: user.email,
+      avatar_id: user.avatar_id,
       total_xp: Number(user.total_xp ?? 0),
       totalXP: Number(user.total_xp ?? 0),
       streakDays,
       totalAnswers: totalAnswers,
+      completedNodes: completedNodes,
       learned_vocabulary_count: learnedVocabularyCount,
       learnedVocabularyCount: learnedVocabularyCount,
       total_study_duration: totalStudyDuration,
@@ -623,10 +634,54 @@ export const getProfileAnalytics = async (req, res) => {
       weeklyActivity,
       quizTrend,
       heatmap,
+      todayQuizCount,
     });
   } catch (error) {
     console.error('GET /profile/:userId/analytics error', error);
     return res.status(500).json({ error: 'Không thể lấy dữ liệu analytics profile.' });
+  }
+};
+
+export const updateProfile = async (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    const { username, avatar_id } = req.body;
+    if (!userId || !username) {
+      return res.status(400).json({ error: 'Thiếu thông tin người dùng.' });
+    }
+
+    // Check if the username is taken by someone else
+    const [existing] = await db.query('SELECT id FROM users WHERE username = ? AND id != ?', [username, userId]);
+    if (existing.length > 0) {
+      return res.status(409).json({ error: 'Tên hiển thị này đã có người sử dụng.' });
+    }
+
+    await db.query(
+      'UPDATE users SET username = ?, avatar_id = ? WHERE id = ?',
+      [username, avatar_id || 'shark_default', userId]
+    );
+
+    return res.json({ success: true, username, avatar_id: avatar_id || 'shark_default' });
+  } catch (error) {
+    console.error('PUT /profile/:userId error', error);
+    return res.status(500).json({ error: 'Không thể cập nhật hồ sơ.' });
+  }
+};
+
+export const addXp = async (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    const { amount } = req.body;
+    if (!userId || !amount) return res.status(400).json({ error: 'Thiếu thông tin.' });
+
+    await db.query('UPDATE users SET total_xp = total_xp + ? WHERE id = ?', [amount, userId]);
+    
+    const [[{ total_xp }]] = await db.query('SELECT total_xp FROM users WHERE id = ?', [userId]);
+
+    return res.json({ success: true, totalXp: total_xp });
+  } catch (error) {
+    console.error('POST /progress/add-xp error', error);
+    return res.status(500).json({ error: 'Không thể cộng XP.' });
   }
 };
 
@@ -646,6 +701,15 @@ export const markCardLearned = async (req, res) => {
        is_learned = 1, 
        times_learned = times_learned + 1, 
        last_learned_at = NOW()`,
+      [userId, flashcardId, materialId]
+    );
+
+    // Bắt đầu nhét vào SRS khi đánh dấu đã học (Star)
+    await db.query(
+      `INSERT INTO user_srs_progress
+       (user_id, flashcard_id, material_id, repetition, interval_days, easiness_factor, next_review_date)
+       VALUES (?, ?, ?, 0, 1, 2.5, DATE_ADD(NOW(), INTERVAL 1 DAY))
+       ON DUPLICATE KEY UPDATE material_id = material_id`,
       [userId, flashcardId, materialId]
     );
 
@@ -768,7 +832,7 @@ const bumpLearningPathIndex = async (userId, materialId) => {
 
 export const completeFlashcardBatch = async (req, res) => {
   try {
-    const { userId, materialId, batchIndex } = req.body;
+    const { userId, materialId, batchIndex, isAlreadyCompleted } = req.body;
 
     if (!userId || !materialId || batchIndex === undefined) {
       return res.status(400).json({ error: 'Thiếu tham số.' });
@@ -793,9 +857,21 @@ export const completeFlashcardBatch = async (req, res) => {
       cardIds.flatMap((cardId) => [userId, cardId, materialId])
     );
 
+    await db.query(
+      `INSERT INTO user_srs_progress
+       (user_id, flashcard_id, material_id, repetition, interval_days, easiness_factor, next_review_date)
+       VALUES ${cardIds.map(() => '(?, ?, ?, 0, 1, 2.5, DATE_ADD(NOW(), INTERVAL 1 DAY))').join(', ')}
+       ON DUPLICATE KEY UPDATE material_id = material_id`,
+      cardIds.flatMap((cardId) => [userId, cardId, materialId])
+    );
+
     const xpReward = cardIds.length * 5;
     await db.query('UPDATE users SET total_xp = total_xp + ? WHERE id = ?', [xpReward, userId]);
-    const currentCardIndex = await bumpLearningPathIndex(userId, materialId);
+    
+    let currentCardIndex = null;
+    if (!isAlreadyCompleted) {
+      currentCardIndex = await bumpLearningPathIndex(userId, materialId);
+    }
     await ensureStudySessionForToday(userId);
     await updateUserStreakForToday(userId);
 
@@ -808,7 +884,7 @@ export const completeFlashcardBatch = async (req, res) => {
 
 export const completeQuizNode = async (req, res) => {
   try {
-    const { userId, materialId, nodeId, sessionType, batchIndex, totalQuestions, correctAnswers } = req.body;
+    const { userId, materialId, nodeId, sessionType, batchIndex, totalQuestions, correctAnswers, isAlreadyCompleted } = req.body;
 
     if (!userId || !materialId || !nodeId) {
       return res.status(400).json({ error: 'Thiếu tham số.' });
@@ -839,7 +915,10 @@ export const completeQuizNode = async (req, res) => {
       await db.query('UPDATE users SET total_xp = total_xp + ? WHERE id = ?', [xpReward, userId]);
     }
 
-    const currentCardIndex = await bumpLearningPathIndex(userId, materialId);
+    let currentCardIndex = null;
+    if (!isAlreadyCompleted) {
+      currentCardIndex = await bumpLearningPathIndex(userId, materialId);
+    }
     await ensureStudySessionForToday(userId);
     await updateUserStreakForToday(userId);
     return res.json({ success: true, currentCardIndex, score });
@@ -911,7 +990,7 @@ export const getQuizProgress = async (req, res) => {
 
 export const completeQuizSession = async (req, res) => {
   try {
-    const { userId, materialId, sessionType, batchIndex, totalQuestions, correctAnswers } = req.body;
+    const { userId, materialId, sessionType, batchIndex, totalQuestions, correctAnswers, isAlreadyCompleted } = req.body;
 
     if (
       !userId ||
@@ -935,7 +1014,11 @@ export const completeQuizSession = async (req, res) => {
 
     const xpReward = Math.round(correctAnswers * 10);
     await db.query('UPDATE users SET total_xp = total_xp + ? WHERE id = ?', [xpReward, userId]);
-    const currentCardIndex = await bumpLearningPathIndex(userId, materialId);
+    
+    let currentCardIndex = null;
+    if (!isAlreadyCompleted) {
+      currentCardIndex = await bumpLearningPathIndex(userId, materialId);
+    }
     await ensureStudySessionForToday(userId);
     await updateUserStreakForToday(userId);
 
@@ -973,7 +1056,7 @@ export const getHomeWrongWords = async (req, res) => {
            SELECT f.id, f.material_id, f.kanji, f.meaning,
                   ROW_NUMBER() OVER (
                     PARTITION BY f.material_id 
-                    ORDER BY COALESCE(ufp.is_learned, 0) DESC, f.id ASC
+                    ORDER BY f.id ASC
                   ) - 1 AS row_num
            FROM flashcards f
            LEFT JOIN user_flashcard_progress ufp 
@@ -1002,7 +1085,7 @@ export const getHomeWrongWords = async (req, res) => {
            SELECT f.id, f.material_id, f.kanji, f.meaning,
                   ROW_NUMBER() OVER (
                     PARTITION BY f.material_id 
-                    ORDER BY COALESCE(ufp.is_learned, 0) DESC, f.id ASC
+                    ORDER BY f.id ASC
                   ) - 1 AS row_num
            FROM flashcards f
            LEFT JOIN user_flashcard_progress ufp 
@@ -1048,5 +1131,54 @@ export const getLearnedCards = async (req, res) => {
   } catch (error) {
     console.error('GET /progress/learned-cards error', error);
     return res.status(500).json({ error: 'Không thể lấy danh sách thẻ đã học.' });
+  }
+};
+
+import { calculateNextReview, mapScoreToQuality } from '../utils/srsAlgorithm.js';
+
+export const completeSrsReview = async (req, res) => {
+  try {
+    const { userId, materialId, results } = req.body;
+    if (!userId || !materialId || !results || !Array.isArray(results)) {
+      return res.status(400).json({ error: 'Thiếu tham số.' });
+    }
+
+    const updates = [];
+    for (const resItem of results) {
+      const { cardId, score } = resItem;
+      const quality = mapScoreToQuality(score);
+
+      const [rows] = await db.query(
+        'SELECT repetition, interval_days, easiness_factor FROM user_srs_progress WHERE user_id = ? AND flashcard_id = ?',
+        [userId, cardId]
+      );
+
+      if (rows.length > 0) {
+        const currentSrs = rows[0];
+        const next = calculateNextReview(quality, currentSrs.repetition, currentSrs.easiness_factor, currentSrs.interval_days);
+
+        updates.push(db.query(
+          `UPDATE user_srs_progress 
+           SET repetition = ?, interval_days = ?, easiness_factor = ?, next_review_date = ?, last_reviewed_at = NOW()
+           WHERE user_id = ? AND flashcard_id = ?`,
+          [next.repetition, next.interval, next.easiness, next.nextReviewDate, userId, cardId]
+        ));
+      }
+    }
+
+    if (updates.length > 0) {
+        await Promise.all(updates);
+    }
+    
+    const xpReward = results.length * 5;
+    await db.query('UPDATE users SET total_xp = total_xp + ? WHERE id = ?', [xpReward, userId]);
+
+    await ensureStudySessionForToday(userId);
+    await updateUserStreakForToday(userId);
+
+    return res.json({ success: true, reviewedCount: results.length });
+  } catch (error) {
+    console.error('POST /progress/srs-review error', error);
+    return res.status(500).json({ error: 'Không thể lưu kết quả ôn tập.' });
   }
 };

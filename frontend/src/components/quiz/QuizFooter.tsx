@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { useGlobalUI } from '../../context/GlobalUIContext';
-import { CheckCircle2, AlertCircle, RefreshCw, ArrowRight } from 'lucide-react-native';
+import { CheckCircle2, AlertCircle, RefreshCw, ArrowRight, BookOpen } from 'lucide-react-native';
 import type { QuizType, QuizWord } from './types';
 
 type QuizFooterProps = {
@@ -44,6 +44,7 @@ type QuizFooterProps = {
   onChangeInput: (value: string) => void;
   onSelectOption: (option: string | null) => void;
   onResetChosenTileIds: () => void;
+  onShowMatchAnswers?: () => void;
 };
 
 export default function QuizFooter({
@@ -79,6 +80,7 @@ export default function QuizFooter({
   onChangeInput,
   onSelectOption,
   onResetChosenTileIds,
+  onShowMatchAnswers,
 }: QuizFooterProps) {
   const [countdown, setCountdown] = useState<number | null>(null);
   const { colors, theme } = useTheme();
@@ -167,20 +169,8 @@ export default function QuizFooter({
   const isFirstMatchRound = isMatchMode && matchRound === 0;
   const shouldShowRetryModal = isMatchMode && isFirstMatchRound && isCorrect === false && matchScore < 80;
 
-  useEffect(() => {
-    if (shouldShowRetryModal && !hasShownRetryAlert) {
-      showAlert(
-        'Cần làm lại',
-        'Bạn cần đạt ít nhất 80% ở đợt 1 để tiếp tục. Vui lòng làm lại đợt này.',
-        [{ text: 'OK', onPress: () => setHasShownRetryAlert(true) }],
-        'warning'
-      );
-    }
-
-    if (!shouldShowRetryModal) {
-      setHasShownRetryAlert(false);
-    }
-  }, [shouldShowRetryModal, hasShownRetryAlert]);
+  // Đã gỡ bỏ Alert "Cần làm lại" vì nó gây xung đột Modal (chết cảm ứng) khi người dùng hết tim.
+  // Giao diện đã có thông báo "Chưa đạt yêu cầu!" màu đỏ và nút "Làm lại đợt này" rất rõ ràng.
 
   const handleCheckPress = () => {
     if (isCheckDisabled) return;
@@ -281,7 +271,7 @@ export default function QuizFooter({
             </View>
             <View style={styles.answerInfoBox}>
               <Text style={[styles.answerLabelText, { color: colors.textSecondary }]}>
-                Điểm của bạn: <Text style={{ color: dangerTextColor, fontWeight: '900' }}>{matchScore}%</Text> (Yêu cầu đạt ≥ 80%)
+                Bạn đã ghép đúng: <Text style={{ color: dangerTextColor, fontWeight: '900' }}>{matchScore}%</Text>
               </Text>
             </View>
           </View>
@@ -300,6 +290,23 @@ export default function QuizFooter({
               </View>
             </TouchableOpacity>
           </View>
+
+          {onShowMatchAnswers && (
+            <View style={[styles.btn3DWrapper, { marginTop: 12 }]}>
+              <View style={[styles.btn3DBase, { backgroundColor: isDark ? '#334155' : '#94A3B8' }]} />
+              <TouchableOpacity
+                activeOpacity={0.9}
+                disabled={isSubmitting}
+                onPress={onShowMatchAnswers}
+                style={[styles.checkButton, { backgroundColor: isDark ? '#475569' : '#CBD5E1' }]}
+              >
+                <View style={styles.rowBtnContent}>
+                  <BookOpen size={16} color={isDark ? "#FFFFFF" : "#1E293B"} style={{ marginRight: 6 }} />
+                  <Text style={[styles.checkButtonText, { color: isDark ? "#FFFFFF" : "#1E293B" }]}>Xem đáp án</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {!isFirstMatchRound && (
             <View style={[styles.btn3DWrapper, { marginTop: 12 }]}>
@@ -336,7 +343,7 @@ export default function QuizFooter({
 
             <View style={styles.answerInfoBox}>
               <Text style={[styles.answerLabelText, { color: isDark ? colors.text : colors.textSecondary }]}>
-                {isMatchMode && isCorrect ? 'Bạn đã ghép đúng ≥ 80%' : 'Đáp án chuẩn:'}
+                {isMatchMode ? `Bạn đã ghép đúng: ${matchScore}%` : 'Đáp án chuẩn:'}
               </Text>
               {!isMatchMode && (
                 <Text style={[styles.answerValueText, { color: isCorrect ? successTextColor : dangerTextColor }]}>

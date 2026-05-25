@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import SharkLoader from '../components/ui/SharkLoader';
 import {
   Dimensions,
@@ -9,6 +10,11 @@ import {
   Platform,
   Image,
   TouchableOpacity,
+  Modal,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  Share
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { StackScreenProps } from '@react-navigation/stack';
@@ -23,28 +29,35 @@ import {
   Calendar,
   Layers,
   LogOut,
-  ArrowLeft
+  ArrowLeft,
+  Lock,
+  Star,
+  Trophy,
+  Settings,
+  X,
+  Share2
 } from 'lucide-react-native';
 import * as Progress from 'react-native-progress';
-import { PieChart } from 'react-native-chart-kit';
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useGlobalUI } from '../context/GlobalUIContext';
 import type { RootStackParamList } from '../components/AppNavigator';
 import ScreenContainer from '../components/ScreenContainer';
-import BottomNavigation from '../components/BottomNavigation';
 import { BACKEND_URL } from '../config/BackendConfig';
 import { calculateLevelInfo } from '../utils/level';
+import { LinearGradient } from 'expo-linear-gradient';
 
 type ProfileScreenProps = StackScreenProps<RootStackParamList, 'Profile'>;
 
 type ProfileData = {
   username: string;
   email: string;
+  avatar_id?: string;
   totalXP: number;
   averageAccuracy: number;
   streakDays: number;
   totalAnswers: number;
+  completedNodes: number;
   vocabStats: {
     mastered: number;
     learning: number;
@@ -52,9 +65,56 @@ type ProfileData = {
   };
   weeklyActivity: boolean[];
   heatmap: Record<string, number>;
+  quizTrend: { date: string; score: number }[];
+  todayQuizCount: number;
 };
 
 const screenWidth = Dimensions.get('window').width;
+
+const BADGES_DEF = [
+  { id: 'streak_3', title: 'Khởi động', desc: 'Học 3 ngày liên tục', icon: Flame, color: '#FF9500', condition: (d: ProfileData) => d.streakDays >= 3 },
+  { id: 'streak_7', title: 'Trùm Chăm Chỉ', desc: 'Học 7 ngày liên tục', icon: Flame, color: '#FF3B30', condition: (d: ProfileData) => d.streakDays >= 7 },
+  { id: 'xp_1000', title: 'Tân Binh', desc: 'Đạt 1,000 XP', icon: Star, color: '#FFD02C', condition: (d: ProfileData) => d.totalXP >= 1000 },
+  { id: 'xp_5000', title: 'Học Giả', desc: 'Đạt 5,000 XP', icon: Crown, color: '#AF52DE', condition: (d: ProfileData) => d.totalXP >= 5000 },
+  { id: 'acc_80', title: 'Bách Phát', desc: 'Độ chính xác > 80%', icon: Target, color: '#4CD964', condition: (d: ProfileData) => d.averageAccuracy >= 80 && d.totalAnswers > 50 },
+  { id: 'vocab_100', title: 'Từ Điển Sống', desc: 'Thuộc 100 từ vựng', icon: Layers, color: '#34C759', condition: (d: ProfileData) => (d.vocabStats?.mastered || 0) >= 100 },
+  { id: 'master', title: 'Bậc Thầy', desc: '10k XP & Chuỗi 14', icon: Trophy, color: '#FFCC00', condition: (d: ProfileData) => d.totalXP >= 10000 && d.streakDays >= 14 },
+];
+
+export type AvatarDef = {
+  id: string;
+  name: string;
+  image: any;
+  minLevel?: number;
+  badgeId?: string;
+  isDefault?: boolean;
+};
+
+export const AVATARS: AvatarDef[] = [
+  { id: 'shark_magic', name: 'Shark Phép Thuật', image: require('../../assets/avatar/sharkMagic.png'), isDefault: true },
+  { id: 'shark_sakura', name: 'Shark Sakura', image: require('../../assets/avatar/shark_sakura.png'), isDefault: true },
+  { id: 'shark_tuyet', name: 'Shark Tuyết', image: require('../../assets/avatar/shark_tuyết.png'), isDefault: true },
+  { id: 'shark_rb', name: 'Shark Rainbow', image: require('../../assets/avatar/shark_rb.png'), isDefault: true },
+  { id: 'shark_1', name: 'Shark Cấp 3', image: require('../../assets/avatar/shark_1.png'), minLevel: 3 },
+  { id: 'shark_2', name: 'Shark Cấp 5', image: require('../../assets/avatar/shark_2.png'), minLevel: 5 },
+  { id: 'shark_gia', name: 'Shark Lão Gia', image: require('../../assets/avatar/shark_gia.png'), minLevel: 8 },
+  { id: 'shark_hary', name: 'Shark Hary', image: require('../../assets/avatar/shark_hary.png'), minLevel: 12 },
+  { id: 'shark_hime', name: 'Shark Hime', image: require('../../assets/avatar/shark_hime.png'), minLevel: 15 },
+  { id: 'shark_kara', name: 'Shark Kara', image: require('../../assets/avatar/shark_kara.png'), minLevel: 18 },
+  { id: 'shark_kim', name: 'Shark Kim', image: require('../../assets/avatar/shark_kim.png'), minLevel: 22 },
+  { id: 'shark_kimono', name: 'Shark Kimono', image: require('../../assets/avatar/shark_kimono.png'), minLevel: 25 },
+  { id: 'shark_sexy', name: 'Shark Sexy', image: require('../../assets/avatar/shark_sexy.png'), minLevel: 28 },
+  { id: 'shark_spider', name: 'Shark Spider', image: require('../../assets/avatar/shark_spider.png'), minLevel: 32 },
+  { id: 'shark_spm', name: 'Shark SPM', image: require('../../assets/avatar/shark_spm.png'), minLevel: 35 },
+  { id: 'shark_tt', name: 'Shark Tối Thượng', image: require('../../assets/avatar/shark_tt.png'), minLevel: 40 },
+  { id: 'shark_tapsu', name: 'Shark Tập Sự', image: require('../../assets/avatar/shark_tapsu.png'), badgeId: 'streak_3' },
+  { id: 'shark_cay', name: 'Shark Cày', image: require('../../assets/avatar/shark_cay.png'), badgeId: 'streak_7' },
+  { id: 'shark_totnghiep', name: 'Shark Tốt Nghiệp', image: require('../../assets/avatar/shark_totnghiep.png'), badgeId: 'xp_1000' },
+  { id: 'shark_ninja', name: 'Shark Ninja', image: require('../../assets/avatar/shark_ninja.png'), badgeId: 'xp_5000' },
+  { id: 'shark_doc', name: 'Shark Học Giả', image: require('../../assets/avatar/shark_doc.png'), badgeId: 'acc_80' },
+  { id: 'shark_game', name: 'Shark Game', image: require('../../assets/avatar/shark_game.png'), badgeId: 'vocab_100' },
+  { id: 'shark_tuongquan', name: 'Shark Tướng Quân', image: require('../../assets/avatar/shark_tuongquan.png'), badgeId: 'master' },
+];
 
 function getPersona(xp: number, accuracy: number) {
   if (xp > 20000 && accuracy >= 85) return { title: 'Huyền Thoại', sub: 'Học bá ngôn ngữ', color: '#FFD02C' };
@@ -72,36 +132,48 @@ async function fetchProfileData(userId: number): Promise<ProfileData> {
     return {
       username: payload.username || 'Học viên',
       email: payload.email || 'demo@japanese.local',
+      avatar_id: payload.avatar_id || 'shark_magic',
       totalXP: Number(payload.totalXP ?? 0),
       averageAccuracy: Number(payload.averageAccuracy ?? 0),
       streakDays: Number(payload.streakDays ?? 0),
       totalAnswers: Number(payload.totalAnswers ?? 0),
+      completedNodes: Number(payload.completedNodes ?? 0),
       vocabStats: payload.vocabStats ?? payload.vocab_stats ?? { mastered: 0, learning: 0, notLearned: 0 },
       weeklyActivity: payload.weeklyActivity ?? payload.weekly_activity ?? [false, false, false, false, false, false, false],
       heatmap: payload.heatmap ?? payload.heatMap ?? {},
+      quizTrend: payload.quizTrend ?? payload.quiz_trend ?? [],
+      todayQuizCount: Number(payload.todayQuizCount ?? 0),
     };
   } catch (error) {
     return {
       username: 'Học viên',
       email: 'demo@japanese.local',
+      avatar_id: 'shark_magic',
       totalXP: 0,
       averageAccuracy: 0,
       streakDays: 0,
       totalAnswers: 0,
+      completedNodes: 0,
       vocabStats: { mastered: 0, learning: 0, notLearned: 0 },
       weeklyActivity: [false, false, false, false, false, false, false],
       heatmap: {},
+      quizTrend: [],
+      todayQuizCount: 0,
     };
   }
 }
 
 export default function ProfileScreen({ navigation }: ProfileScreenProps) {
-  const { user, logout } = useAuthContext();
+  const { user, logout, updateUser } = useAuthContext();
   const { colors, theme } = useTheme();
   const { showAlert } = useGlobalUI();
   const isDark = theme === 'dark';
   const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+  const [tempUsername, setTempUsername] = useState('');
+  const [tempAvatarId, setTempAvatarId] = useState('shark_magic');
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleLogout = () => {
     showAlert('Đăng xuất', 'Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng không?', [
@@ -111,48 +183,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   };
 
   const levelInfo = useMemo(() => calculateLevelInfo(profileData?.totalXP ?? 0), [profileData?.totalXP]);
-  const persona = useMemo(() => getPersona(profileData?.totalXP ?? 0, profileData?.averageAccuracy ?? 0), [profileData]);
-
-  // Gộp nhóm từ vựng sang cấu trúc 2 phân vùng dữ liệu thẳng phẳng sạch sẽ: Đã Thuộc / Chưa Thuộc
-  const totalInVocabStore = useMemo(() => {
-    if (!profileData?.vocabStats) return 0;
-    const { mastered, notLearned } = profileData.vocabStats;
-    return mastered + notLearned;
-  }, [profileData?.vocabStats]);
-
-  const statsPercentages = useMemo(() => {
-    if (!totalInVocabStore) return { mastered: 0, notLearned: 0 };
-    return {
-      mastered: Math.round(((profileData?.vocabStats?.mastered ?? 0) / totalInVocabStore) * 100),
-      notLearned: Math.round(((profileData?.vocabStats?.notLearned ?? 0) / totalInVocabStore) * 100),
-    };
-  }, [profileData?.vocabStats, totalInVocabStore]);
-
-  const chartData = useMemo(() => {
-    return [
-      {
-        name: 'Đã thuộc',
-        population: profileData?.vocabStats?.mastered ?? 0,
-        color: '#10B981',
-        legendFontColor: 'transparent',
-        legendFontSize: 0,
-      },
-      {
-        name: 'Chưa thuộc',
-        population: profileData?.vocabStats?.notLearned ?? 0,
-        color: isDark ? '#475569' : '#CBD5E1',
-        legendFontColor: 'transparent',
-        legendFontSize: 0,
-      },
-    ];
-  }, [profileData?.vocabStats, isDark]);
-
-  const chartConfig = {
-    backgroundColor: colors.card,
-    backgroundGradientFrom: colors.card,
-    backgroundGradientTo: colors.card,
-    color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-  };
 
   const formatLocalDate = (date: Date) => {
     const year = date.getFullYear();
@@ -165,7 +195,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     const cells = [] as Array<{ key: string; date: Date; count: number }>;
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 27);
-
     for (let i = 0; i < 28; i += 1) {
       const date = new Date(startDate.getTime());
       date.setDate(startDate.getDate() + i);
@@ -176,7 +205,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
         count: Number(profileData?.heatmap?.[key] ?? 0),
       });
     }
-
     return cells;
   }, [profileData?.heatmap]);
 
@@ -184,30 +212,25 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
   const dynamicStyles = useMemo(() => StyleSheet.create({
     loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
-    scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40, backgroundColor: colors.background },
+    scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 100, backgroundColor: colors.background },
     profileCard: {
-      backgroundColor: colors.card, borderRadius: 24, padding: 20, alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#F1F5F9',
-      ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.01, shadowRadius: 8 }, android: { elevation: 1 } }),
+      borderRadius: 28, padding: 24, marginBottom: 24, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#FFFFFF',
+      ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.05, shadowRadius: 20 }, android: { elevation: 2 } }),
     },
-    username: { fontSize: 22, fontWeight: '900', color: colors.text, marginBottom: 4, letterSpacing: -0.5 },
-    emailText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
-    xpRemainingText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginTop: 10, textAlign: 'center' },
-    sectionTitle: { fontSize: 16, fontWeight: '900', color: colors.text, marginBottom: 12, letterSpacing: -0.2 }
+    username: { fontSize: 24, fontWeight: '900', color: colors.text, marginBottom: 4, letterSpacing: -0.5 },
+    emailText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+    xpRemainingText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary, marginTop: 12, textAlign: 'center' },
+    sectionTitle: { fontSize: 18, fontWeight: '900', color: colors.text, marginBottom: 16, letterSpacing: -0.3 },
+    cardBackground: { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F8FAFC' }
   }), [colors, isDark]);
 
   const loadProfileData = useCallback(async () => {
     if (!user?.id) { setProfileData(null); setIsReady(true); return; }
-
-    setProfileData(current => {
-      if (current === null) {
-        setIsReady(false);
-      }
-      return current;
-    });
-
     try {
       const data = await fetchProfileData(Number(user.id));
       setProfileData(data);
+      setTempUsername(data.username);
+      setTempAvatarId(data.avatar_id || 'shark_magic');
     } catch (error) {
       console.warn(error);
     } finally {
@@ -215,203 +238,376 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     }
   }, [user?.id]);
 
-  React.useEffect(() => {
-    setProfileData(null);
-    setIsReady(false);
-  }, [user?.id]);
-
   useFocusEffect(React.useCallback(() => { loadProfileData(); }, [loadProfileData]));
+
+  const handleSaveProfile = async () => {
+    if (!user?.id) return;
+    if (!tempUsername.trim()) {
+      Alert.alert('Lỗi', 'Tên hiển thị không được để trống.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/profile/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: tempUsername, avatar_id: tempAvatarId }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Cập nhật thất bại');
+      }
+      // Update local state and global AuthContext state
+      setProfileData(prev => prev ? { ...prev, username: tempUsername, avatar_id: tempAvatarId } : null);
+      if (updateUser) {
+        updateUser({ username: tempUsername, avatar_id: tempAvatarId });
+      }
+      setIsSettingsVisible(false);
+      showAlert('Thành công', 'Đã cập nhật hồ sơ.', [], 'success');
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const todayActivityCount = useMemo(() => {
+    return Number(profileData?.heatmap?.[formatLocalDate(new Date())] ?? 0);
+  }, [profileData?.heatmap]);
+
+  const [claimedQuests, setClaimedQuests] = useState<Record<string, boolean>>({});
+  const [selectedDateInfo, setSelectedDateInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!profileData || !user?.id) return;
+
+    const checkAndRewardQuest = async (questId: string, condition: boolean, title: string, xpReward: number) => {
+      const todayStr = formatLocalDate(new Date());
+      const key = `QuestReward_${user.id}_${questId}_${todayStr}`;
+
+      try {
+        const hasClaimed = await AsyncStorage.getItem(key);
+        if (hasClaimed) {
+          setClaimedQuests(prev => {
+            if (prev[questId]) return prev;
+            return { ...prev, [questId]: true };
+          });
+          return;
+        }
+
+        if (!condition) return;
+
+        await AsyncStorage.setItem(key, 'true');
+        const response = await fetch(`${BACKEND_URL}/api/progress/${user.id}/add-xp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount: xpReward }),
+        });
+        if (response.ok) {
+          showAlert('Nhiệm vụ hoàn thành!', `Bạn nhận được +${xpReward} XP từ nhiệm vụ: ${title}`, [], 'success');
+          setProfileData(prev => prev ? { ...prev, totalXP: prev.totalXP + xpReward } : null);
+        }
+        setClaimedQuests(prev => ({ ...prev, [questId]: true }));
+      } catch (e) {
+        console.warn('Lỗi kiểm tra phần thưởng nhiệm vụ', e);
+      }
+    };
+
+    checkAndRewardQuest('quest_3_lessons', todayActivityCount >= 3, 'Hoàn thành 3 bài học', 5);
+    checkAndRewardQuest('quest_5_lessons', todayActivityCount >= 5, 'Hoàn thành 5 bài học', 10);
+    checkAndRewardQuest('quest_streak', profileData.streakDays >= 1 && todayActivityCount > 0, 'Duy trì chuỗi học tập', 10);
+
+    const loadShareStatus = async () => {
+      const todayStr = formatLocalDate(new Date());
+      const key = `QuestReward_${user.id}_quest_share_${todayStr}`;
+      const hasClaimed = await AsyncStorage.getItem(key);
+      if (hasClaimed) {
+        setClaimedQuests(prev => ({ ...prev, quest_share: true }));
+      }
+    };
+    loadShareStatus();
+
+  }, [profileData?.streakDays, todayActivityCount, user?.id]);
+
+  const handleShareApp = async () => {
+    try {
+      const result = await Share.share({
+        message: 'Cùng học bộ thẻ từ vựng siêu thú vị với Shark Magic nhé! Tải ứng dụng ngay hôm nay!',
+      });
+      if (result.action === Share.sharedAction) {
+        if (!claimedQuests['quest_share'] && user?.id) {
+          const todayStr = formatLocalDate(new Date());
+          const key = `QuestReward_${user.id}_quest_share_${todayStr}`;
+          await AsyncStorage.setItem(key, 'true');
+          const response = await fetch(`${BACKEND_URL}/api/progress/${user.id}/add-xp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: 10 }),
+          });
+          if (response.ok) {
+            showAlert('Nhiệm vụ hoàn thành!', `Bạn nhận được +10 XP từ nhiệm vụ: Chia sẻ bộ thẻ cho bạn bè`, [], 'success');
+            setProfileData(prev => prev ? { ...prev, totalXP: prev.totalXP + 10 } : null);
+          }
+          setClaimedQuests(prev => ({ ...prev, quest_share: true }));
+        }
+      }
+    } catch (error: any) {
+      console.error(error.message);
+    }
+  };
+
+  const currentAvatar = useMemo(() => {
+    const aid = profileData?.avatar_id || 'shark_magic';
+    return AVATARS.find(a => a.id === aid)?.image || AVATARS[0].image;
+  }, [profileData?.avatar_id]);
+
+  const sortedBadges = useMemo(() => {
+    if (!profileData) return BADGES_DEF;
+    const unlocked = BADGES_DEF.filter(b => b.condition(profileData));
+    const locked = BADGES_DEF.filter(b => !b.condition(profileData));
+    return [...unlocked, ...locked];
+  }, [profileData]);
 
   return (
     <ScreenContainer>
-      {/* Header */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.background, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {/* <TouchableOpacity
-            onPress={() => {
-              if (navigation.canGoBack()) navigation.goBack();
-              else navigation.navigate('MainTabs' as any);
-            }}
-            style={{ padding: 8, marginRight: 12, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderRadius: 12 }}
-          >
-            <ArrowLeft size={20} color={colors.text} />
-          </TouchableOpacity> */}
-          <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text, letterSpacing: -0.5 }}>Hồ sơ</Text>
+      <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: isDark ? '#1E293B' : '#F1F5F9', backgroundColor: colors.background, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+        <Text style={{ fontSize: 22, fontWeight: '900', color: colors.text, letterSpacing: -0.5 }}>Hồ sơ</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity onPress={() => setIsSettingsVisible(true)} style={{ padding: 10, backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderRadius: 14 }}><Settings size={20} color={colors.textSecondary} /></TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout} style={{ padding: 10, backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderRadius: 14 }}><LogOut size={20} color={colors.primary} /></TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          onPress={handleLogout}
-          style={{ padding: 8, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderRadius: 12 }}
-        >
-          <LogOut size={20} color={colors.primary} />
-        </TouchableOpacity>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={dynamicStyles.scrollContent} bounces={false}>
         {!isReady ? (
-          <View style={dynamicStyles.loaderContainer}>
-            <SharkLoader size="small" message="" />
-          </View>
+          <View style={dynamicStyles.loaderContainer}><SharkLoader size="small" message="" /></View>
         ) : (
           <>
             {/* THẺ TÀI KHOẢN CAO CẤP */}
-            <View style={dynamicStyles.profileCard}>
-              <View style={styles.profileRow}>
-                <View style={[styles.avatarContainer, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-                  <Image
-                    source={require('../../assets/sharkMagic.png')}
-                    style={styles.mascotAvatarImg}
-                  />
-                  <View style={[styles.levelBadgeMini, { backgroundColor: '#FFD02C', borderColor: colors.card }]}>
-                    <Text style={styles.levelBadgeText}>Lv.{levelInfo.level}</Text>
+            <LinearGradient
+              colors={isDark ? ['#1E293B', '#0F172A'] : ['#FFFFFF', '#F8FAFC']}
+              style={[dynamicStyles.profileCard, { padding: 24, paddingBottom: 28 }]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+                <View style={{ position: 'relative' }}>
+                  <View style={{ width: 88, height: 88, borderRadius: 30, backgroundColor: isDark ? '#334155' : '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: themePrimaryColor, overflow: 'hidden' }}>
+                    <Image source={currentAvatar} style={{ width: '75%', height: '75%', resizeMode: 'contain' }} />
+                  </View>
+                  <View style={{ position: 'absolute', bottom: -8, alignSelf: 'center', backgroundColor: '#F59E0B', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 2, borderColor: isDark ? '#0F172A' : '#FFFFFF' }}>
+                    <Text style={{ fontSize: 11, fontWeight: '900', color: '#FFF' }}>Lv.{levelInfo.level}</Text>
                   </View>
                 </View>
-
-                <View style={styles.profileInfo}>
-                  <Text style={dynamicStyles.username} numberOfLines={1}>{profileData?.username ?? user?.username ?? 'Học viên'}</Text>
-                  <View style={styles.emailRow}>
-                    <Mail size={13} color={colors.textSecondary} />
-                    <Text style={dynamicStyles.emailText} numberOfLines={1}>{profileData?.email ?? user?.email ?? 'demo@japanese.local'}</Text>
+                <View style={{ marginLeft: 20, flex: 1 }}>
+                  <Text style={[dynamicStyles.username, { fontSize: 26, letterSpacing: -0.8 }]} numberOfLines={1}>{profileData?.username ?? 'Học viên'}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                    <Mail size={14} color={colors.textSecondary} />
+                    <Text style={[dynamicStyles.emailText, { marginLeft: 6 }]} numberOfLines={1}>{profileData?.email ?? 'demo@japanese.local'}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, backgroundColor: isDark ? 'rgba(59, 122, 102, 0.2)' : '#E9FBF5', alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                    <Sparkles size={12} color={themePrimaryColor} />
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: themePrimaryColor, marginLeft: 4 }}>{profileData?.totalXP ?? 0} XP</Text>
                   </View>
                 </View>
               </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, alignItems: 'flex-end' }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>Tiến trình cấp {levelInfo.level + 1}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: themePrimaryColor }}>{levelInfo.xpToNextLevel} XP nữa</Text>
+              </View>
+              <Progress.Bar progress={levelInfo.progress} height={14} color={themePrimaryColor} unfilledColor={isDark ? '#334155' : '#E2E8F0'} borderWidth={0} borderRadius={10} width={null} style={{ width: '100%' }} />
+            </LinearGradient>
 
-              <View style={[styles.levelSection, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                <View style={styles.levelLabels}>
-                  <View style={styles.levelRowDetail}>
-                    <Award size={16} color={themePrimaryColor} style={{ marginRight: 4 }} />
-                    <Text style={[styles.levelMainLabel, { color: colors.text }]}>Cấp độ {levelInfo.level}</Text>
+            {/* THỐNG KÊ NHANH */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 30 }}>
+              <LinearGradient
+                colors={isDark ? ['#3F2007', '#1F1104'] : ['#FFF3E0', '#FFEDD5']}
+                style={{ flex: 1, borderRadius: 24, padding: 16, marginRight: 8, borderWidth: 1, borderColor: isDark ? '#7C2D12' : '#FED7AA', ...Platform.select({ ios: { shadowColor: '#EA580C', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 10 }, android: { elevation: 2 } }) }}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 16, backgroundColor: isDark ? 'rgba(234, 88, 12, 0.2)' : '#FFDED1', justifyContent: 'center', alignItems: 'center' }}>
+                    <Flame size={24} color="#F97316" />
                   </View>
-                  <View style={[styles.xpChip, { backgroundColor: isDark ? 'rgba(59, 122, 102, 0.15)' : '#E9FBF5' }]}>
-                    <Sparkles size={11} color={themePrimaryColor} />
-                    <Text style={[styles.xpText, { color: themePrimaryColor }]}>{profileData?.totalXP ?? 0} XP</Text>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 24, fontWeight: '900', color: isDark ? '#FFEDD5' : '#9A3412' }}>{profileData?.streakDays ?? 0}</Text>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#FDBA74' : '#C2410C' }}>Ngày Chuỗi</Text>
                   </View>
                 </View>
-                <Progress.Bar progress={levelInfo.progress} height={10} color={themePrimaryColor} unfilledColor={isDark ? '#1E293B' : '#E2E8F0'} borderWidth={0} borderRadius={8} width={screenWidth - 72} />
-                <Text style={dynamicStyles.xpRemainingText}>Còn {levelInfo.xpToNextLevel} XP để thăng cấp Cấp {levelInfo.level + 1} 🚀</Text>
-              </View>
+              </LinearGradient>
+
+              <LinearGradient
+                colors={isDark ? ['#0C2538', '#071520'] : ['#E0F2FE', '#BAE6FD']}
+                style={{ flex: 1, borderRadius: 24, padding: 16, marginLeft: 8, borderWidth: 1, borderColor: isDark ? '#0284C7' : '#7DD3FC', ...Platform.select({ ios: { shadowColor: '#0284C7', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 10 }, android: { elevation: 2 } }) }}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 16, backgroundColor: isDark ? 'rgba(2, 132, 199, 0.2)' : '#D0E9FA', justifyContent: 'center', alignItems: 'center' }}>
+                    <CheckCircle2 size={24} color="#0EA5E9" />
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 24, fontWeight: '900', color: isDark ? '#E0F2FE' : '#075985' }}>{profileData?.completedNodes ?? 0}</Text>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#7DD3FC' : '#0369A1' }}>Hoàn thành</Text>
+                  </View>
+                </View>
+              </LinearGradient>
             </View>
 
-            {/* CHIẾN TÍCH CÁ NHÂN */}
-            <Text style={dynamicStyles.sectionTitle}>Chiến tích cá nhân</Text>
-            <View style={styles.analyticsGrid}>
-              <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                <View style={[styles.iconWrapper, { backgroundColor: persona.color + '15' }]}><Crown size={16} color={persona.color} fill={persona.color} /></View>
-                <View style={styles.statContent}>
-                  <Text style={[styles.statValueText, { color: colors.text }]} numberOfLines={1}>{persona.title}</Text>
-                  <Text style={[styles.statLabelText, { color: colors.textSecondary }]}>{persona.sub}</Text>
-                </View>
-              </View>
-              <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                <View style={[styles.iconWrapper, { backgroundColor: '#FF950015' }]}><Flame size={16} color="#FF9500" fill="#FF9500" /></View>
-                <View style={styles.statContent}>
-                  <Text style={[styles.statValueText, { color: colors.text }]}>{profileData?.streakDays ?? 0} Ngày</Text>
-                  <Text style={[styles.statLabelText, { color: colors.textSecondary }]}>Chuỗi hiện tại</Text>
-                </View>
-              </View>
-              <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                <View style={[styles.iconWrapper, { backgroundColor: '#10B98115' }]}><Target size={16} color="#10B981" /></View>
-                <View style={styles.statContent}>
-                  <Text style={[styles.statValueText, { color: colors.text }]}>{profileData?.averageAccuracy ? `${Math.round(profileData.averageAccuracy)}%` : '--'}</Text>
-                  <Text style={[styles.statLabelText, { color: colors.textSecondary }]}>Độ chính xáC</Text>
-                </View>
-              </View>
-              <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                <View style={[styles.iconWrapper, { backgroundColor: '#3B82F615' }]}><CheckCircle2 size={16} color="#3B82F6" /></View>
-                <View style={styles.statContent}>
-                  <Text style={[styles.statValueText, { color: colors.text }]}>{profileData?.totalAnswers ?? 0} câu</Text>
-                  <Text style={[styles.statLabelText, { color: colors.textSecondary }]}>Tổng câu trả lời</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* PHÂN TÍCH KHO TỪ VỰNG */}
-            <Text style={dynamicStyles.sectionTitle}>Phân tích kho từ vựng</Text>
-            <View style={[styles.vocabCard, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-              <View style={styles.vocabHeader}>
-                <View style={[styles.miniIconWrapper, { backgroundColor: isDark ? 'rgba(59, 122, 102, 0.15)' : '#E9FBF5' }]}>
-                  <Layers size={13} color={themePrimaryColor} />
-                </View>
-                <Text style={[styles.vocabMainTitle, { color: colors.text }]}>
-                  Tổng tích lũy: <Text style={{ color: themePrimaryColor, fontWeight: '900' }}>{totalInVocabStore}</Text> từ vựng
-                </Text>
-              </View>
-
-              {totalInVocabStore > 0 ? (
-                <View style={styles.chartContainerRow}>
-                  <View style={styles.chartWrapper}>
-                    <PieChart
-                      data={chartData}
-                      width={140}
-                      height={140}
-                      chartConfig={chartConfig}
-                      accessor={"population"}
-                      backgroundColor={"transparent"}
-                      paddingLeft={"35"}
-                      center={[0, 0]}
-                      hasLegend={false}
-                      absolute
-                    />
-                    <View style={[styles.donutHole, { backgroundColor: colors.card }]} />
-                  </View>
-
-                  <View style={styles.legendContainer}>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendIndicator, { backgroundColor: '#10B981' }]} />
-                      <View style={styles.legendTextContainer}>
-                        <Text style={[styles.legendLabel, { color: colors.text }]}>Đã thuộc vững</Text>
-                        <Text style={[styles.legendValue, { color: colors.textSecondary }]}>
-                          {profileData?.vocabStats?.mastered ?? 0} từ ({statsPercentages.mastered}%)
-                        </Text>
-                      </View>
+            {/* HỆ THỐNG HUY HIỆU */}
+            <Text style={dynamicStyles.sectionTitle}>Huy hiệu & Thành tựu</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgesScrollContent}>
+              {sortedBadges.map((badge) => {
+                const isUnlocked = badge.condition(profileData || {} as ProfileData);
+                const IconComponent = badge.icon;
+                return (
+                  <View key={badge.id} style={[styles.badgeCard, dynamicStyles.cardBackground, { opacity: isUnlocked ? 1 : 0.6 }]}>
+                    <View style={[styles.badgeIconWrapper, { backgroundColor: isUnlocked ? badge.color + '1A' : (isDark ? '#334155' : '#F1F5F9') }]}>
+                      {isUnlocked ? (
+                        <IconComponent size={28} color={badge.color} fill={badge.id.includes('xp') || badge.id.includes('streak') ? badge.color : 'none'} />
+                      ) : (
+                        <Lock size={24} color={colors.textSecondary} />
+                      )}
                     </View>
-
-                    <View style={styles.legendItem}>
-                      <View style={[styles.legendIndicator, { backgroundColor: isDark ? '#475569' : '#CBD5E1' }]} />
-                      <View style={styles.legendTextContainer}>
-                        <Text style={[styles.legendLabel, { color: colors.text }]}>Chưa thuộc</Text>
-                        <Text style={[styles.legendValue, { color: colors.textSecondary }]}>
-                          {profileData?.vocabStats?.notLearned ?? 0} từ ({statsPercentages.notLearned}%)
-                        </Text>
-                      </View>
-                    </View>
+                    <Text style={[styles.badgeTitle, { color: colors.text }]} numberOfLines={1}>{badge.title}</Text>
+                    <Text style={[styles.badgeDesc, { color: colors.textSecondary }]} numberOfLines={2}>{badge.desc}</Text>
                   </View>
+                );
+              })}
+            </ScrollView>
+
+            {/* NHIỆM VỤ HÀNG NGÀY */}
+            <Text style={[dynamicStyles.sectionTitle, { marginTop: 10 }]}>Nhiệm vụ Hàng ngày</Text>
+            <View style={{ backgroundColor: colors.card, borderRadius: 28, padding: 20, marginBottom: 30, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#F8FAFC', ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.05, shadowRadius: 12 }, android: { elevation: 2 } }) }}>
+
+              {/* Quest 1: 3 Bài học */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+                <View style={{ width: 50, height: 50, borderRadius: 18, backgroundColor: claimedQuests['quest_3_lessons'] ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5') : (isDark ? '#334155' : '#F1F5F9'), justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+                  <Sparkles size={24} color={claimedQuests['quest_3_lessons'] ? "#10B981" : colors.textSecondary} />
                 </View>
-              ) : (
-                <Text style={{ color: colors.textSecondary, textAlign: 'center', marginVertical: 24, fontSize: 13, fontWeight: '600' }}>
-                  Chưa có tiến trình phân tích dữ liệu.
-                </Text>
-              )}
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>Hoàn thành 3 bài học</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: claimedQuests['quest_3_lessons'] ? "#10B981" : colors.textSecondary }}>{Math.min(todayActivityCount, 3)}<Text style={{ fontSize: 12, color: colors.textSecondary }}>/3</Text></Text>
+                  </View>
+                  <Progress.Bar progress={Math.min(todayActivityCount / 3, 1)} height={10} color="#F59E0B" unfilledColor={isDark ? '#334155' : '#E2E8F0'} borderWidth={0} borderRadius={6} width={null} style={{ width: '100%' }} />
+                  {claimedQuests['quest_3_lessons'] && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginTop: 8 }}>
+                      <CheckCircle2 size={14} color="#10B981" />
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: "#10B981", marginLeft: 4 }}>Hoàn thành (+5 XP)</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {/* Quest 2: 5 Bài học */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+                <View style={{ width: 50, height: 50, borderRadius: 18, backgroundColor: claimedQuests['quest_5_lessons'] ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5') : (isDark ? '#334155' : '#F1F5F9'), justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+                  <Target size={24} color={claimedQuests['quest_5_lessons'] ? "#10B981" : colors.textSecondary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>Hoàn thành 5 bài học</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: claimedQuests['quest_5_lessons'] ? "#10B981" : colors.textSecondary }}>{Math.min(todayActivityCount, 5)}<Text style={{ fontSize: 12, color: colors.textSecondary }}>/5</Text></Text>
+                  </View>
+                  <Progress.Bar progress={Math.min(todayActivityCount / 5, 1)} height={10} color="#10B981" unfilledColor={isDark ? '#334155' : '#E2E8F0'} borderWidth={0} borderRadius={6} width={null} style={{ width: '100%' }} />
+                  {claimedQuests['quest_5_lessons'] && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginTop: 8 }}>
+                      <CheckCircle2 size={14} color="#10B981" />
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: "#10B981", marginLeft: 4 }}>Hoàn thành (+10 XP)</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {/* Quest 3: Duy trì chuỗi */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+                <View style={{ width: 50, height: 50, borderRadius: 18, backgroundColor: claimedQuests['quest_streak'] ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5') : (isDark ? '#334155' : '#F1F5F9'), justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+                  <Flame size={24} color={claimedQuests['quest_streak'] ? "#10B981" : colors.textSecondary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>Duy trì chuỗi học tập</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: claimedQuests['quest_streak'] ? "#10B981" : colors.textSecondary }}>{todayActivityCount > 0 ? 1 : 0}<Text style={{ fontSize: 12, color: colors.textSecondary }}>/1</Text></Text>
+                  </View>
+                  <Progress.Bar progress={todayActivityCount > 0 ? 1 : 0} height={10} color="#EF4444" unfilledColor={isDark ? '#334155' : '#E2E8F0'} borderWidth={0} borderRadius={6} width={null} style={{ width: '100%' }} />
+                  {claimedQuests['quest_streak'] && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginTop: 8 }}>
+                      <CheckCircle2 size={14} color="#10B981" />
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: "#10B981", marginLeft: 4 }}>Hoàn thành (+10 XP)</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {/* Quest 4: Share */}
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ width: 50, height: 50, borderRadius: 18, backgroundColor: claimedQuests['quest_share'] ? (isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5') : (isDark ? '#334155' : '#F1F5F9'), justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+                  <Share2 size={24} color={claimedQuests['quest_share'] ? "#10B981" : colors.textSecondary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>Chia sẻ bộ thẻ cho bạn bè</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: claimedQuests['quest_share'] ? "#10B981" : colors.textSecondary }}>{claimedQuests['quest_share'] ? 1 : 0}<Text style={{ fontSize: 12, color: colors.textSecondary }}>/1</Text></Text>
+                  </View>
+                  <Progress.Bar progress={claimedQuests['quest_share'] ? 1 : 0} height={10} color="#10B981" unfilledColor={isDark ? '#334155' : '#E2E8F0'} borderWidth={0} borderRadius={6} width={null} style={{ width: '100%' }} />
+                  {claimedQuests['quest_share'] ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginTop: 8 }}>
+                      <CheckCircle2 size={14} color="#10B981" />
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: "#10B981", marginLeft: 4 }}>Hoàn thành (+10 XP)</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity onPress={handleShareApp} style={{ backgroundColor: themePrimaryColor, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10, alignSelf: 'flex-start', marginTop: 8 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: '#FFF' }}>Chia sẻ ngay</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
             </View>
 
-            {/* NHẬT KÝ HOẠT ĐỘNG TRONG THÁNG */}
-            <Text style={dynamicStyles.sectionTitle}>Nhật ký hoạt động tháng này</Text>
-            <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-              <View style={styles.calendarHeaderRow}>
-                <Calendar size={14} color={colors.textSecondary} />
+            {/* NHẬT KÝ HOẠT ĐỘNG */}
+            <Text style={dynamicStyles.sectionTitle}>Nhật kí hoạt động</Text>
+            <View style={{ backgroundColor: colors.card, borderRadius: 28, padding: 24, marginBottom: 24, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#F8FAFC', ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.05, shadowRadius: 10 }, android: { elevation: 2 } }) }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Calendar size={18} color={themePrimaryColor} style={{ marginRight: 8 }} />
+                  <Text style={{ color: colors.text, fontWeight: '800', fontSize: 15 }}></Text>
+                </View>
+                {selectedDateInfo && (
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: themePrimaryColor, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#E9FBF5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' }}>
+                    {selectedDateInfo}
+                  </Text>
+                )}
               </View>
               <View style={styles.monthGrid}>
-                {monthActivityCells.map((cell) => (
-                  <View key={cell.key} style={styles.monthCellWrapper}>
-                    <View style={[
-                      styles.monthCell,
-                      {
-                        backgroundColor: cell.count ? themePrimaryColor : (isDark ? '#1E293B' : '#F1F5F9'),
-                        borderColor: 'transparent'
-                      }
-                    ]} />
-                    <Text style={[styles.monthCellLabel, { color: colors.textSecondary }]}>{cell.date.getDate()}</Text>
-                  </View>
-                ))}
+                {monthActivityCells.map((cell) => {
+                  const [yyyy, mm, dd] = cell.key.split('-');
+                  const dayStr = `${dd}/${mm}/${yyyy}`;
+                  return (
+                    <TouchableOpacity
+                      key={cell.key}
+                      style={{ width: '14.28%', aspectRatio: 1, padding: 3 }}
+                      onPress={() => setSelectedDateInfo(`${dayStr}: ${cell.count > 0 ? `Hoàn thành ${cell.count} bài học` : 'Nghỉ ngơi'}`)}
+                    >
+                      <View style={[
+                        { width: '100%', height: '100%', borderRadius: 6 },
+                        {
+                          backgroundColor: cell.count ? themePrimaryColor : (isDark ? '#1E293B' : '#F1F5F9'),
+                          opacity: cell.count ? (0.4 + Math.min(cell.count * 0.15, 0.6)) : 1,
+                        }
+                      ]} />
+                    </TouchableOpacity>
+                  )
+                })}
               </View>
-              <View style={[styles.activityLegendRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                <View style={styles.activityLegendItem}>
-                  <View style={[styles.activityLegendDot, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: 'transparent' }]} />
-                  <Text style={[styles.activityLegendText, { color: colors.textSecondary }]}>Nghỉ ngơi</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 16 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginRight: 6 }} />
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>Nghỉ ngơi</Text>
                 </View>
-                <View style={styles.activityLegendItem}>
-                  <View style={[styles.activityLegendDot, { backgroundColor: themePrimaryColor, borderColor: 'transparent' }]} />
-                  <Text style={[styles.activityLegendText, { color: colors.textSecondary }]}>Đang học</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: themePrimaryColor, opacity: 0.8, marginRight: 6 }} />
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>Đang học</Text>
                 </View>
               </View>
             </View>
@@ -419,127 +615,164 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
         )}
       </ScrollView>
 
-    </ScreenContainer>
+      {/* Settings Modal */}
+      <Modal visible={isSettingsVisible} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24, maxHeight: '90%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: colors.text }}>Chỉnh sửa hồ sơ</Text>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <TouchableOpacity
+                  onPress={handleSaveProfile}
+                  disabled={isSaving}
+                  style={{ backgroundColor: themePrimaryColor, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 16 }}
+                >
+                  {isSaving ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>Lưu</Text>}
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => setIsSettingsVisible(false)} style={{ padding: 8, backgroundColor: isDark ? '#334155' : '#F1F5F9', borderRadius: 16 }}>
+                  <X size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary, marginBottom: 8, marginTop: 10 }}>Tên hiển thị</Text>
+              <TextInput
+                value={tempUsername}
+                onChangeText={setTempUsername}
+                style={{ backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderWidth: 1, borderColor: isDark ? '#334155' : '#E2E8F0', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, color: colors.text, fontWeight: '600', marginBottom: 24 }}
+                placeholder="Nhập tên của bạn"
+                placeholderTextColor={colors.textSecondary}
+              />
+
+              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary, marginBottom: 12 }}>Chọn Avatar (Theo cấp độ & thành tựu)</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginBottom: 30 }}>
+                {AVATARS.map((avatar) => {
+                  let isLocked = false;
+                  let lockReason = '';
+                  let lockDisplay = '';
+
+                  if (avatar.minLevel) {
+                    if (levelInfo.level < avatar.minLevel) {
+                      isLocked = true;
+                      lockReason = `Avatar này yêu cầu Cấp độ ${avatar.minLevel} trở lên. Hãy học thêm để thăng cấp nhé!`;
+                      lockDisplay = `Lv.${avatar.minLevel}`;
+                    }
+                  } else if (avatar.badgeId) {
+                    const badge = BADGES_DEF.find(b => b.id === avatar.badgeId);
+                    if (badge) {
+                      const unlocked = badge.condition(profileData || {} as ProfileData);
+                      if (!unlocked) {
+                        isLocked = true;
+                        lockReason = `Avatar này yêu cầu đạt danh hiệu "${badge.title}". Hãy cố gắng nhé!`;
+                        lockDisplay = `Huy hiệu`;
+                      }
+                    }
+                  }
+
+                  const isSelected = tempAvatarId === avatar.id;
+                  return (
+                    <TouchableOpacity
+                      key={avatar.id}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        if (isLocked) {
+                          Alert.alert('Chưa mở khóa', lockReason);
+                        } else {
+                          setTempAvatarId(avatar.id);
+                        }
+                      }}
+                      style={[
+                        {
+                          width: (screenWidth - 48 - 16 * 2) / 3, // 3 cols
+                          aspectRatio: 1,
+                          borderRadius: 20,
+                          borderWidth: 2,
+                          borderColor: isSelected ? themePrimaryColor : (isDark ? '#334155' : '#E2E8F0'),
+                          backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          opacity: isLocked ? 0.6 : 1,
+                          position: 'relative',
+                          overflow: 'hidden', // Để hình không bị tràn ra ngoài viền
+                        },
+                        isSelected && Platform.select({
+                          ios: { shadowColor: themePrimaryColor, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
+                          android: { elevation: 4 }
+                        })
+                      ]}
+                    >
+                      <Image source={avatar.image} style={{ width: '75%', height: '75%', resizeMode: 'contain', opacity: isLocked ? 0.3 : 1 }} />
+                      {isLocked && (
+                        <View style={{ position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.5)', padding: 4, borderRadius: 10 }}>
+                          <Lock size={12} color="#FFFFFF" />
+                        </View>
+                      )}
+                      {isLocked && lockDisplay && (
+                        <Text style={{ position: 'absolute', bottom: 6, fontSize: 9, fontWeight: '900', color: colors.textSecondary, backgroundColor: 'rgba(255,255,255,0.8)', paddingHorizontal: 4, borderRadius: 4 }}>{lockDisplay}</Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </ScreenContainer >
   );
 }
 
 const styles = StyleSheet.create({
-  profileRow: { flexDirection: 'row', alignItems: 'center', width: '100%', gap: 16 },
+  profileRow: { flexDirection: 'row', alignItems: 'center', width: '100%', gap: 18 },
   avatarContainer: {
-    width: 64, height: 64, borderRadius: 20,
+    width: 80, height: 80, borderRadius: 28, padding: 10,
     justifyContent: 'center', alignItems: 'center',
     position: 'relative', borderWidth: 1,
+    overflow: 'visible',
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.02, shadowRadius: 4 },
-      android: { elevation: 1 }
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8 },
+      android: { elevation: 3 }
     })
   },
-  mascotAvatarImg: {
-    width: 48,
-    height: 48,
-    resizeMode: 'contain',
-  },
+  mascotAvatarImg: { width: '75%', height: '75%', resizeMode: 'contain' },
   profileInfo: { flex: 1 },
   emailRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
   levelBadgeMini: {
-    position: 'absolute',
-    bottom: -6,
-    right: -10,
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    zIndex: 10
+    position: 'absolute', bottom: -8, right: -8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, justifyContent: 'center', alignItems: 'center', borderWidth: 2, zIndex: 10
   },
-  levelBadgeText: { fontSize: 8.5, fontWeight: '900', color: '#000000' },
-  levelSection: { marginTop: 16, paddingTop: 14, borderTopWidth: 1, width: '100%' },
+  levelBadgeText: { fontSize: 9, fontWeight: '900', color: '#000000' },
+  levelSection: { marginTop: 20, paddingTop: 16, borderTopWidth: 1, width: '100%' },
   levelRowDetail: { flexDirection: 'row', alignItems: 'center' },
-  levelLabels: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  levelMainLabel: { fontSize: 14, fontWeight: '900', letterSpacing: -0.2 },
-  xpChip: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  xpText: { fontWeight: '900', fontSize: 11 },
-  analyticsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
-  statBox: {
-    width: (Dimensions.get('window').width - 44) / 2, borderRadius: 20, padding: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
-    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.01, shadowRadius: 6 }, android: { elevation: 1 } }),
+  levelLabels: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  levelMainLabel: { fontSize: 16, fontWeight: '900', letterSpacing: -0.2 },
+  xpChip: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  xpText: { fontWeight: '900', fontSize: 13 },
+
+  badgesScrollContent: { gap: 16, paddingBottom: 24, paddingHorizontal: 4 },
+  badgeCard: {
+    width: 130, padding: 16, borderRadius: 24, borderWidth: 1, alignItems: 'center',
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.05, shadowRadius: 10 }, android: { elevation: 2 } }),
   },
-  iconWrapper: { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  statContent: { flex: 1 },
-  statValueText: { fontSize: 14, fontWeight: '900', marginBottom: 2, letterSpacing: -0.2 },
-  statLabelText: { fontSize: 10, fontWeight: '700' },
-  vocabCard: {
-    borderRadius: 24, padding: 18, borderWidth: 1, marginBottom: 20,
-    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.01, shadowRadius: 6 }, android: { elevation: 1 } }),
-  },
-  vocabHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  miniIconWrapper: { width: 26, height: 26, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  vocabMainTitle: { fontSize: 14, fontWeight: '700', letterSpacing: -0.1 },
-  chartContainerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  chartWrapper: {
-    position: 'relative',
-    width: 140,
-    height: 140,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  donutHole: {
-    position: 'absolute',
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    zIndex: 2,
-    left: '50%',
-    top: '50%',
-    transform: [{ translateX: -42 }, { translateY: -42 }],
-  },
-  legendContainer: {
-    flex: 1,
-    paddingLeft: 16,
-    gap: 12,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  legendIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 4,
-  },
-  legendTextContainer: {
-    flex: 1,
-  },
-  legendLabel: {
-    fontSize: 13,
-    fontWeight: '800',
-    marginBottom: 2,
-    letterSpacing: -0.1,
-  },
-  legendValue: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  badgeIconWrapper: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  badgeTitle: { fontSize: 14, fontWeight: '900', marginBottom: 6, textAlign: 'center' },
+  badgeDesc: { fontSize: 11, fontWeight: '600', textAlign: 'center', lineHeight: 16 },
+
+  // Removed old vocab chart styles
+
   calendarCard: {
-    borderRadius: 24, padding: 16, borderWidth: 1, marginBottom: 20,
-    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.01, shadowRadius: 6 }, android: { elevation: 1 } }),
+    borderRadius: 28, padding: 20, borderWidth: 1, marginBottom: 24,
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.05, shadowRadius: 10 }, android: { elevation: 2 } }),
   },
-  calendarHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
-  monthGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 6 },
-  monthCellWrapper: { width: 32, alignItems: 'center', marginBottom: 12 },
-  monthCell: { width: 32, height: 32, borderRadius: 10 },
-  monthCellLabel: { fontSize: 10, marginTop: 4, fontWeight: '700' },
-  activityLegendRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, paddingTop: 14 },
+  calendarHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
+  monthGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 10 },
+  monthCellWrapper: { width: 36, alignItems: 'center', marginBottom: 10 },
+  monthCell: { width: 32, height: 32, borderRadius: 8 },
+  activityLegendRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, paddingTop: 16 },
   activityLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  activityLegendDot: { width: 12, height: 12, borderRadius: 4 },
-  activityLegendText: { fontSize: 12, fontWeight: '700' },
+  activityLegendDot: { width: 14, height: 14, borderRadius: 5 },
+  activityLegendText: { fontSize: 13, fontWeight: '700' },
 });

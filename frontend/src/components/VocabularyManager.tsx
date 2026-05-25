@@ -6,6 +6,8 @@ import React, {
   useState,
 } from 'react';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import {
   Animated,
   Alert,
@@ -37,6 +39,7 @@ import {
   deleteMaterial,
   updateMaterial,
 } from '../api/api';
+import { BACKEND_URL } from '../config/BackendConfig';
 
 import VocabularyItem from './VocabularyItem';
 import AddVocabularyModal from './AddVocabularyModal';
@@ -318,6 +321,25 @@ export default function VocabularyManager({
       if (refreshNotificationCount) {
         refreshNotificationCount();
       }
+
+      // Đánh dấu hoàn thành nhiệm vụ chia sẻ hàng ngày
+      try {
+        const d = new Date();
+        const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const key = `QuestReward_${user.id}_quest_share_${todayStr}`;
+        const hasClaimed = await AsyncStorage.getItem(key);
+        if (!hasClaimed) {
+          await AsyncStorage.setItem(key, 'true');
+          await fetch(`${BACKEND_URL}/api/progress/${user.id}/add-xp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: 10 }),
+          });
+        }
+      } catch (err) {
+        console.warn('Lỗi cập nhật nhiệm vụ chia sẻ', err);
+      }
+
       if (result?.senderXp !== undefined) {
         // Optional: refresh UI or update context if needed
       }

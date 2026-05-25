@@ -33,13 +33,7 @@ export interface JourneyNode {
  * Xử lý số dư R >= 6 (tạo nhóm mới) và R < 6 (rải ngược về các nhóm trước).
  */
 export function chunkVocabulary<T>(vocabList: T[]): T[][] {
-  const learned = vocabList.filter((item: any) => item && item.is_learned === 1);
-  const unlearned = vocabList.filter((item: any) => !item || item.is_learned !== 1);
-
-  const chunksLearned = chunkVocabularyHelper(learned);
-  const chunksUnlearned = chunkVocabularyHelper(unlearned);
-
-  return [...chunksLearned, ...chunksUnlearned];
+  return chunkVocabularyHelper(vocabList);
 }
 
 function chunkVocabularyHelper<T>(vocabList: T[]): T[][] {

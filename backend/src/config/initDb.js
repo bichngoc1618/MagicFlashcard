@@ -58,6 +58,20 @@ const initDb = async () => {
             )`
         );
 
+        await connection.query(
+            `CREATE TABLE IF NOT EXISTS user_srs_progress (
+                user_id INT NOT NULL,
+                flashcard_id INT NOT NULL,
+                material_id INT NOT NULL,
+                repetition INT NOT NULL DEFAULT 0,
+                interval_days FLOAT NOT NULL DEFAULT 0,
+                easiness_factor FLOAT NOT NULL DEFAULT 2.5,
+                next_review_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_reviewed_at TIMESTAMP NULL,
+                PRIMARY KEY (user_id, flashcard_id)
+            )`
+        );
+
         await connection.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS global_hearts INT NOT NULL DEFAULT 5`);
 
         // Thêm chỉ mục tối ưu hóa hiệu năng

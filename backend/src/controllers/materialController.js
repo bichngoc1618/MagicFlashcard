@@ -4,18 +4,12 @@ import { seedDefaultStudyContent } from '../config/defaultSeed.js';
 const CHUNK_SIZE = 10;
 
 const getSeparatedTotalBatches = (totalCards, learnedCards) => {
-  const learnedCount = Number(learnedCards) || 0;
-  const unlearnedCount = Math.max(0, (Number(totalCards) || 0) - learnedCount);
-  
-  const getHelperBatches = (count) => {
-    if (!count || count <= 0) return 0;
-    const numFullChunks = Math.floor(count / CHUNK_SIZE);
-    const remainder = count % CHUNK_SIZE;
-    if (numFullChunks === 0) return 1;
-    return remainder >= 6 ? numFullChunks + 1 : numFullChunks;
-  };
-  
-  return getHelperBatches(learnedCount) + getHelperBatches(unlearnedCount);
+  const count = Number(totalCards) || 0;
+  if (!count || count <= 0) return 0;
+  const numFullChunks = Math.floor(count / CHUNK_SIZE);
+  const remainder = count % CHUNK_SIZE;
+  if (numFullChunks === 0) return 1;
+  return remainder >= 6 ? numFullChunks + 1 : numFullChunks;
 };
 
 const calculateNodeProgress = (totalCards, learnedCards, currentNodeIndex = 0) => {
@@ -38,7 +32,12 @@ export const getMaterials = async (req, res) => {
          COALESCE(COUNT(f.id), 0) AS total_cards,
          COALESCE(SUM(COALESCE(ufp.is_learned, 0)), 0) AS learned_cards,
          COALESCE(MAX(lp.current_card_index), 0) AS current_card_index,
-         COALESCE(MAX(lp.status), 'in_progress') AS status
+         COALESCE(MAX(lp.status), 'in_progress') AS status,
+         COALESCE((
+           SELECT GROUP_CONCAT(flashcard_id)
+           FROM user_srs_progress
+           WHERE user_id = ? AND material_id = m.id AND next_review_date <= NOW()
+         ), '') AS due_cards_list
        FROM study_materials m
        LEFT JOIN flashcards f ON f.material_id = m.id
        LEFT JOIN user_flashcard_progress ufp ON ufp.flashcard_id = f.id AND ufp.user_id = ?
@@ -46,7 +45,7 @@ export const getMaterials = async (req, res) => {
        WHERE m.user_id = ?
        GROUP BY m.id
        ORDER BY m.created_at DESC`,
-      [userId, userId, userId]
+      [userId, userId, userId, userId]
     );
 
     const materialsWithProgress = materials.map((item) => {
@@ -180,7 +179,7 @@ export const getFlashcards = async (req, res) => {
        LEFT JOIN user_flashcard_progress ufp
          ON ufp.flashcard_id = f.id AND ufp.user_id = ?
        WHERE f.material_id = ?
-       ORDER BY COALESCE(ufp.is_learned, 0) DESC, f.id ASC`,
+       ORDER BY f.id ASC`,
       [userId, materialId]
     );
 
@@ -222,7 +221,7 @@ export const getStudyJourney = async (req, res) => {
        LEFT JOIN user_flashcard_progress ufp
          ON ufp.flashcard_id = f.id AND ufp.user_id = ?
        WHERE f.material_id = ?
-       ORDER BY COALESCE(ufp.is_learned, 0) DESC, f.id ASC`,
+       ORDER BY f.id ASC`,
       [userId, materialId]
     );
 
@@ -337,10 +336,44 @@ export const deleteMaterial = async (req, res) => {
 export const getUserStats = async (req, res) => {
   try {
     const userId = Number(req.params.userId);
-    const [userRows] = await db.query('SELECT total_xp, last_study_date, global_hearts FROM users WHERE id = ?', [userId]);
+    const [userRows] = await db.query(
+      'SELECT total_xp, last_study_date, global_hearts FROM users WHERE id = ?',
+      [userId]
+    );
     const user = userRows[0];
     if (!user) {
       return res.status(404).json({ error: 'Người dùng không tồn tại.' });
+    }
+
+    const getVietnamDateString = (dateObj) => {
+      if (!dateObj) return null;
+      return new Date(dateObj).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+    };
+
+    const todayVnStr = getVietnamDateString(new Date());
+    const lastStudyVnStr = user.last_study_date ? getVietnamDateString(user.last_study_date) : null;
+
+    let shouldResetHearts = 0;
+    if (lastStudyVnStr && lastStudyVnStr < todayVnStr) {
+      shouldResetHearts = 1;
+    }
+
+    let finalHearts = user.global_hearts;
+    let needsUpdate = false;
+
+    if (shouldResetHearts === 1 && finalHearts < 5) {
+      finalHearts = 5;
+      needsUpdate = true;
+    } else if (user.last_study_date === null) {
+      if (finalHearts === null || finalHearts === undefined || finalHearts < 5) {
+        finalHearts = 5;
+        needsUpdate = true;
+      }
+    }
+
+    if (needsUpdate) {
+      await db.query('UPDATE users SET global_hearts = ? WHERE id = ?', [finalHearts, userId]);
+      user.global_hearts = finalHearts;
     }
 
     const today = new Date().toISOString().slice(0, 10);

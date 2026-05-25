@@ -171,6 +171,14 @@ export const syncStudy = async (req, res) => {
            last_learned_at = NOW()`,
         [userId, cardId, materialId]
       ));
+      
+      updates.push(db.query(
+        `INSERT INTO user_srs_progress
+         (user_id, flashcard_id, material_id, repetition, interval_days, easiness_factor, next_review_date)
+         VALUES (?, ?, ?, 0, 1, 2.5, DATE_ADD(NOW(), INTERVAL 1 DAY))
+         ON DUPLICATE KEY UPDATE material_id = material_id`,
+        [userId, cardId, materialId]
+      ));
       updates.push(db.query('UPDATE users SET total_xp = total_xp + 5 WHERE id = ?', [userId]));
     }
 
