@@ -337,7 +337,7 @@ export const getUserStats = async (req, res) => {
   try {
     const userId = Number(req.params.userId);
     const [userRows] = await db.query(
-      'SELECT total_xp, last_study_date, global_hearts FROM users WHERE id = ?',
+      'SELECT total_xp, last_study_date, global_hearts, last_heart_refill_date FROM users WHERE id = ?',
       [userId]
     );
     const user = userRows[0];
@@ -351,10 +351,10 @@ export const getUserStats = async (req, res) => {
     };
 
     const todayVnStr = getVietnamDateString(new Date());
-    const lastStudyVnStr = user.last_study_date ? getVietnamDateString(user.last_study_date) : null;
+    const lastRefillVnStr = user.last_heart_refill_date ? getVietnamDateString(user.last_heart_refill_date) : null;
 
     let shouldResetHearts = 0;
-    if (lastStudyVnStr && lastStudyVnStr < todayVnStr) {
+    if (lastRefillVnStr !== todayVnStr) {
       shouldResetHearts = 1;
     }
 
@@ -364,15 +364,13 @@ export const getUserStats = async (req, res) => {
     if (shouldResetHearts === 1 && finalHearts < 5) {
       finalHearts = 5;
       needsUpdate = true;
-    } else if (user.last_study_date === null) {
-      if (finalHearts === null || finalHearts === undefined || finalHearts < 5) {
-        finalHearts = 5;
-        needsUpdate = true;
-      }
+    } else if (user.last_heart_refill_date === null && finalHearts < 5) {
+      finalHearts = 5;
+      needsUpdate = true;
     }
 
     if (needsUpdate) {
-      await db.query('UPDATE users SET global_hearts = ? WHERE id = ?', [finalHearts, userId]);
+      await db.query('UPDATE users SET global_hearts = ?, last_heart_refill_date = ? WHERE id = ?', [finalHearts, todayVnStr, userId]);
       user.global_hearts = finalHearts;
     }
 

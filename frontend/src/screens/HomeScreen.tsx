@@ -309,6 +309,63 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           </View>
         </View>
 
+        {/* ÔN TẬP HÀNG NGÀY (NẾU CÓ) */}
+        {dueCardIds.length > 0 && currentLesson && (
+          <>
+            <SectionHeader title="Ôn tập hàng ngày" colors={colors} />
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={{
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5',
+                paddingVertical: 14,
+                paddingHorizontal: 20,
+                borderRadius: 16,
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#A7F3D0',
+                marginBottom: 20,
+              }}
+              onPress={async () => {
+                try {
+                  const { sessionId } = await startStudy(currentLesson.id, user?.id || 0);
+                  navigation.navigate('Quiz', {
+                    materialId: currentLesson.id,
+                    flashcardId: String(currentLesson.id),
+                    nodeId: 'srs-review-node',
+                    dueCardIds: dueCardIds,
+                    groupIndex: -2,
+                    subStepIndex: 0,
+                    nodeType: 'SRS_REVIEW',
+                    quizStepType: 'MULTIPLE_CHOICE',
+                    nodeIndex: 0,
+                    sessionId: sessionId,
+                    isAlreadyCompleted: false,
+                  });
+                } catch (e) {
+                  console.log('Error starting review session', e);
+                }
+              }}
+            >
+              <View style={{
+                backgroundColor: '#059669',
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginRight: 12,
+              }}>
+                <RefreshCcw size={18} color="white" />
+              </View>
+              <Text style={{ color: isDark ? '#34D399' : '#047857', fontWeight: '800', fontSize: 17, letterSpacing: -0.2 }}>
+                Ôn tập {dueCardIds.length} thẻ đến hạn
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+
         {/* TIẾP TỤC HÀNH TRÌNH */}
         <SectionHeader title="Tiếp tục hành trình" colors={colors} />
         {currentLesson ? (
@@ -339,58 +396,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             </View>
             <ProgressBar progress={currentLessonProgress} colors={colors} isDark={isDark} title={currentLesson.title} height={12} />
             </TouchableOpacity>
-            
-            {dueCardIds.length > 0 && (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={{
-                  marginTop: 16,
-                  backgroundColor: isDark ? 'rgba(251, 191, 36, 0.15)' : '#FEF3C7',
-                  paddingVertical: 14,
-                  borderRadius: 16,
-                  alignItems: 'center',
-                  flexDirection: 'row',
-                  justifyContent: 'center',
-                  borderWidth: 1,
-                  borderColor: isDark ? 'rgba(251, 191, 36, 0.3)' : '#FDE68A',
-                }}
-                onPress={async () => {
-                  try {
-                    const { sessionId } = await startStudy(currentLesson.id, user?.id || 0);
-                    navigation.navigate('Quiz', {
-                      materialId: currentLesson.id,
-                      flashcardId: String(currentLesson.id),
-                      nodeId: 'srs-review-node',
-                      dueCardIds: dueCardIds,
-                      groupIndex: -2,
-                      subStepIndex: 0,
-                      nodeType: 'SRS_REVIEW',
-                      quizStepType: 'MULTIPLE_CHOICE',
-                      nodeIndex: 0,
-                      sessionId: sessionId,
-                      isAlreadyCompleted: false,
-                    });
-                  } catch (e) {
-                    console.log('Error starting review session', e);
-                  }
-                }}
-              >
-                <View style={{
-                  backgroundColor: '#F59E0B',
-                  width: 28,
-                  height: 28,
-                  borderRadius: 10,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  marginRight: 10,
-                }}>
-                  <RefreshCcw size={16} color="white" />
-                </View>
-                <Text style={{ color: isDark ? '#FCD34D' : '#B45309', fontWeight: '800', fontSize: 16, letterSpacing: -0.2 }}>
-                  Ôn tập {dueCardIds.length} thẻ đến hạn
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         ) : null}
 

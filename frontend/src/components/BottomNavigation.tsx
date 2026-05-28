@@ -142,7 +142,7 @@ export default function BottomNavigation(props: any) {
           label="Hành trình"
           icon={<BookOpenText size={18} color={activeRouteName === 'StudyJourney' ? themePrimaryColor : colors.textSecondary} />}
           active={activeRouteName === 'StudyJourney'}
-          onPress={() => handleNavigate('StudyJourney', { materialId: 1 })}
+          onPress={() => handleNavigate('StudyJourney', { materialId: null })}
           colors={colors}
           themePrimaryColor={themePrimaryColor}
         />

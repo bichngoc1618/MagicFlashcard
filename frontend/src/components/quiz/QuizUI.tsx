@@ -20,6 +20,7 @@ import ScreenContainer from '../ScreenContainer';
 import type { QuizType, QuizWord } from './types';
 
 import QuizHeader from './QuizHeader';
+import BossBattleHeader from './BossBattleHeader';
 import QuizQuestionBody from './QuizQuestionBody';
 import QuizFooter from './QuizFooter';
 
@@ -30,6 +31,7 @@ export interface QuizUIProps {
   questionIndex: number;
   totalQuestionCount: number;
   isBoss: boolean;
+  energyPosition?: number;
   isCorrect: boolean | null;
   inputValue: string;
   selectedOption: string | null;
@@ -54,6 +56,7 @@ export interface QuizUIProps {
   selectedRightId: string | null;
   remainingSeconds: number;
   hearts: number;
+  maxHearts?: number;
   isMatchMode: boolean;
   isTimeUp: boolean;
   hasSubmitted: boolean;
@@ -61,11 +64,14 @@ export interface QuizUIProps {
   selectedAnswer: string | null;
   matchRound: number;
   matchRoundCount: number;
+  correctCount?: number;
+  wrongCount?: number;
   onCancel: () => void;
   onCheckInputAnswer: () => void;
   onVerifyScrambled: () => void;
   onHandleChoiceAnswer: () => void;
   onSubmitMatchAnswer: () => void;
+  onGameComplete?: (correct: boolean) => void;
   onHandlePairSelection: (leftId: string, rightId: string) => void;
   isMatchComplete: boolean;
   matchScore: number;
@@ -87,6 +93,8 @@ export interface QuizUIProps {
   onShowMatchAnswers: () => void;
   leftItemLayouts: React.MutableRefObject<Record<string, LayoutRectangle>>;
   rightItemLayouts: React.MutableRefObject<Record<string, LayoutRectangle>>;
+  promptType?: string;
+  correctAnswer?: string;
 }
 
 export default function QuizUI({
@@ -96,6 +104,7 @@ export default function QuizUI({
   questionIndex,
   totalQuestionCount,
   isBoss,
+  energyPosition = 50,
   isCorrect,
   inputValue,
   selectedOption,
@@ -114,6 +123,7 @@ export default function QuizUI({
   selectedRightId,
   remainingSeconds,
   hearts,
+  maxHearts = 5,
   isMatchMode,
   isTimeUp,
   hasSubmitted,
@@ -121,11 +131,14 @@ export default function QuizUI({
   selectedAnswer,
   matchRound,
   matchRoundCount,
+  correctCount = 0,
+  wrongCount = 0,
   onCancel,
   onCheckInputAnswer,
   onVerifyScrambled,
   onHandleChoiceAnswer,
   onSubmitMatchAnswer,
+  onGameComplete,
   onHandlePairSelection,
   isMatchComplete,
   matchScore,
@@ -147,6 +160,8 @@ export default function QuizUI({
   onShowMatchAnswers,
   leftItemLayouts,
   rightItemLayouts,
+  promptType,
+  correctAnswer,
 }: QuizUIProps) {
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
@@ -156,6 +171,8 @@ export default function QuizUI({
   const themeShadowColor = isDark ? '#193D32' : '#275245';
 
   const shakeTranslateX = useSharedValue(0);
+  const whiteFlashOpacity = useSharedValue(0);
+  const redFlashOpacity = useSharedValue(0);
 
   React.useEffect(() => {
     if ((isCorrect === false && hasSubmitted) || wrongPairs.size > 0 || wrongPair) {
@@ -168,7 +185,22 @@ export default function QuizUI({
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       }
     }
-  }, [isCorrect, hasSubmitted, wrongPairs, wrongPair]);
+
+    // Boss Arena Flash Effects
+    if (isBoss && hasSubmitted) {
+      if (isCorrect === true) {
+        whiteFlashOpacity.value = withSequence(
+          withTiming(0.8, { duration: 50 }),
+          withTiming(0, { duration: 400 })
+        );
+      } else if (isCorrect === false) {
+        redFlashOpacity.value = withSequence(
+          withTiming(0.5, { duration: 50 }),
+          withTiming(0, { duration: 500 })
+        );
+      }
+    }
+  }, [isCorrect, hasSubmitted, wrongPairs, wrongPair, isBoss]);
 
   const shakeStyle = useAnimatedStyle(() => {
     return {
@@ -176,20 +208,56 @@ export default function QuizUI({
     };
   });
 
+  const whiteFlashStyle = useAnimatedStyle(() => {
+    return { opacity: whiteFlashOpacity.value };
+  });
+
+  const redFlashStyle = useAnimatedStyle(() => {
+    return { opacity: redFlashOpacity.value };
+  });
+
+  const calculatedCorrectCount = isMatchMode 
+    ? (isMatchComplete ? 1 : 0) // rough estimation for match mode, but boss is usually not match mode
+    : correctCount;
+  
+  const calculatedWrongCount = isMatchMode ? 0 : wrongCount;
+
+  // Removed old HP calculation since energyPosition handles it.
+
+
   return (
     <ScreenContainer>
-      <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
+      <View style={[styles.mainWrapper, { backgroundColor: isBoss ? (isDark ? '#0F172A' : '#1E293B') : colors.background }]}>
+        {/* FLASH EFFECTS */}
+        {isBoss && (
+          <>
+            <Animated.View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#FFFFFF', zIndex: 999 }, whiteFlashStyle]} pointerEvents="none" />
+            <Animated.View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#EF4444', zIndex: 999 }, redFlashStyle]} pointerEvents="none" />
+          </>
+        )}
+        
         {/* 1. Header cố định */}
-        <QuizHeader
-          stepProgress={stepProgress}
-          activeType={activeType}
-          isBoss={isBoss}
-          questionIndex={questionIndex}
-          totalQuestionCount={totalQuestionCount}
-          remainingSeconds={remainingSeconds}
-          hearts={hearts}
-          onCancel={onCancel}
-        />
+        {isBoss ? (
+          <BossBattleHeader 
+            energyPosition={energyPosition}
+            isTakingDamage={isCorrect === false && hasSubmitted}
+            isHealing={isCorrect === true && hasSubmitted}
+            bossName="Tà thú Kanji"
+            remainingSeconds={remainingSeconds}
+            hearts={hearts}
+          />
+        ) : (
+          <QuizHeader
+            stepProgress={stepProgress}
+            activeType={activeType}
+            isBoss={isBoss}
+            questionIndex={questionIndex}
+            totalQuestionCount={totalQuestionCount}
+            remainingSeconds={remainingSeconds}
+            hearts={hearts}
+            onCancel={onCancel}
+          />
+        )}
 
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -206,7 +274,15 @@ export default function QuizUI({
             {/* Nhãn loại câu hỏi tinh chỉnh đậm đà hơn */}
             <View style={[styles.typeLabelBadge, { backgroundColor: isDark ? 'rgba(59, 122, 102, 0.15)' : '#D1FAE5' }]}>
               <Text style={[styles.typeLabel, { color: themePrimaryColor }]}>
-                {activeType.replace(/_/g, ' ')}
+                {activeType === 'MULTIPLE_CHOICE' ? 'TRẮC NGHIỆM'
+                  : activeType === 'SCRAMBLED_HIRA' ? 'GHÉP CHỮ'
+                  : activeType === 'WRITE_HIRA' ? 'VIẾT HIRAGANA'
+                  : activeType === 'LISTENING' ? 'NGHE VÀ CHỌN'
+                  : activeType === 'TRUE_FALSE' ? 'ĐÚNG HAY SAI'
+                  : activeType === 'MATCH_HIRA' ? 'NỐI ÂM'
+                  : activeType === 'MATCH_MEANING' ? 'NỐI NGHĨA'
+                  : activeType === 'MEMORY_CARD' ? 'THẺ GHI NHỚ'
+                  : activeType.replace(/_/g, ' ')}
               </Text>
             </View>
 
@@ -221,21 +297,22 @@ export default function QuizUI({
               matchingContainerHeight={matchingContainerHeight}
               currentMatchWords={currentMatchWords}
               currentMatchRightItems={currentMatchRightItems}
-              wrongPairs={wrongPairs}
-              pairAssignments={pairAssignments}
+              remainingSeconds={remainingSeconds}
+              isMatchMode={isMatchMode}
               multipleChoiceOptions={multipleChoiceOptions}
               selectedScrambledChars={selectedScrambledChars}
               tiles={tiles}
               selectedLeftId={selectedLeftId}
               selectedRightId={selectedRightId}
-              remainingSeconds={remainingSeconds}
-              isMatchMode={isMatchMode}
+              pairAssignments={pairAssignments}
+              wrongPairs={wrongPairs}
               isTimeUp={isTimeUp}
               hasSubmitted={hasSubmitted}
               selectedAnswer={selectedAnswer}
               matchRound={matchRound}
               matchRoundCount={matchRoundCount}
               onHandleChoiceAnswer={onHandleChoiceAnswer}
+              onGameComplete={onGameComplete}
               onHandlePairSelection={onHandlePairSelection}
               isMatchComplete={isMatchComplete}
               matchScore={matchScore}
@@ -249,11 +326,14 @@ export default function QuizUI({
               onSetMatchingContainerHeight={onSetMatchingContainerHeight}
               leftItemLayouts={leftItemLayouts}
               rightItemLayouts={rightItemLayouts}
+              promptType={promptType}
+              correctAnswer={correctAnswer}
+              isBoss={isBoss}
             />
           </Animated.ScrollView>
 
           {/* 3. Footer chứa nút "Kiểm tra" cố định ở đáy */}
-          <View style={[styles.footerWrapper, { backgroundColor: colors.card, borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
+          <View style={[styles.footerWrapper, { backgroundColor: isBoss ? 'transparent' : colors.card, borderTopColor: isBoss ? 'transparent' : (isDark ? '#1E293B' : '#F1F5F9') }]}>
             <QuizFooter
               stepMode={activeType}
               isCorrect={isCorrect}
@@ -282,6 +362,7 @@ export default function QuizUI({
               onChangeInput={onChangeInput}
               onSelectOption={onSelectOption}
               onResetChosenTileIds={onResetChosenTileIds}
+              isBoss={isBoss}
             />
           </View>
         </KeyboardAvoidingView>

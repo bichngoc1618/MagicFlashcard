@@ -367,7 +367,7 @@ export default function AddVocabularyModal({
         await Sharing.shareAsync(uri);
       } catch (err) {
         console.log(err);
-        showAlert('Lỗi', 'Không thể tạo file mẫu', undefined, 'error');
+        Alert.alert('Lỗi', 'Không thể tạo file mẫu');
       }
     }, []);
 
@@ -436,7 +436,7 @@ export default function AddVocabularyModal({
         !workbook.SheetNames ||
         workbook.SheetNames.length === 0
       ) {
-        showAlert('Lỗi định dạng', 'Tệp tin Excel không hợp lệ hoặc không có trang tính (Sheet) nào.', undefined, 'error');
+        Alert.alert('Lỗi định dạng', 'Tệp tin Excel không hợp lệ hoặc không có trang tính (Sheet) nào.');
         return;
       }
 
@@ -452,7 +452,7 @@ export default function AddVocabularyModal({
         );
 
       if (!sheetData || sheetData.length === 0) {
-        showAlert('Lỗi dữ liệu', 'File Excel không chứa bất kỳ hàng dữ liệu nào.', undefined, 'error');
+        Alert.alert('Lỗi dữ liệu', 'File Excel không chứa bất kỳ hàng dữ liệu nào.');
         return;
       }
 
@@ -476,13 +476,13 @@ export default function AddVocabularyModal({
       if (exampleColIndex === -1) missingColumns.push('example');
 
       if (missingColumns.length > 0) {
-        showAlert('Sai cấu trúc cột', `File Excel thiếu các cột bắt buộc sau: ${missingColumns.map(col => `'${col}'`).join(', ')}.\n\nVui lòng đảm bảo file Excel của bạn chứa đầy đủ các cột: 'kanji', 'hiragana', 'meaning', 'example' (chấp nhận chữ hoa, chữ thường và không quan trọng thứ tự).`, undefined, 'warning');
+        Alert.alert('Sai cấu trúc cột', `File Excel thiếu các cột bắt buộc sau: ${missingColumns.map(col => `'${col}'`).join(', ')}.\n\nVui lòng đảm bảo file Excel của bạn chứa đầy đủ các cột: 'kanji', 'hiragana', 'meaning', 'example' (chấp nhận chữ hoa, chữ thường và không quan trọng thứ tự).`);
         return;
       }
 
       const rowsData = sheetData.slice(1);
       if (rowsData.length === 0) {
-        showAlert('Lỗi dữ liệu', 'Không tìm thấy dòng dữ liệu từ vựng nào dưới dòng tiêu đề (Header).', undefined, 'error');
+        Alert.alert('Lỗi dữ liệu', 'Không tìm thấy dòng dữ liệu từ vựng nào dưới dòng tiêu đề (Header).');
         return;
       }
 
@@ -521,7 +521,7 @@ export default function AddVocabularyModal({
       }
 
       if (!cards.length) {
-        showAlert('Không có dữ liệu hợp lệ', 'Tất cả các dòng dữ liệu trong tệp Excel đều trống hoặc không hợp lệ.', undefined, 'warning');
+        Alert.alert('Không có dữ liệu hợp lệ', 'Tất cả các dòng dữ liệu trong tệp Excel đều trống hoặc không hợp lệ.');
         return;
       }
 
@@ -551,16 +551,15 @@ export default function AddVocabularyModal({
         await onImportCards(
           uniqueCards
         );
+        Alert.alert('Import thành công', `Đã thêm ${uniqueCards.length} flashcards mới thành công!`);
+        closeModal();
       } catch (err: any) {
-        showAlert('Lỗi import', `Không thể nhập từ vựng vào hệ thống. Chi tiết: ${err.message || 'Lỗi không xác định.'}`, undefined, 'error');
+        Alert.alert('Lỗi import', `Không thể nhập từ vựng vào hệ thống. Chi tiết: ${err.message || 'Lỗi không xác định.'}`);
         return;
       }
-
-      showAlert('Import thành công', `Đã thêm ${uniqueCards.length} flashcards mới thành công!`, undefined, 'success');
-      closeModal();
     } catch (err: any) {
       console.log(err);
-      showAlert('Lỗi đọc tệp tin', `Không thể đọc dữ liệu từ file Excel này. Chi tiết: ${err.message || 'Vui lòng kiểm tra định dạng tệp tin.'}`, undefined, 'error');
+      Alert.alert('Lỗi đọc tệp tin', `Không thể đọc dữ liệu từ file Excel này. Chi tiết: ${err.message || 'Vui lòng kiểm tra định dạng tệp tin.'}`);
     } finally {
       setIsFileLoading(false);
     }

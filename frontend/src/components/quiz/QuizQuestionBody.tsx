@@ -24,6 +24,9 @@ import {
 import type { LayoutRectangle } from 'react-native';
 
 import Svg, { Path, Circle } from 'react-native-svg';
+import { Volume2 } from 'lucide-react-native';
+import * as Speech from 'expo-speech';
+import MemoryCardGame from './MemoryCardGame';
 import { LayoutAnimation, UIManager } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -118,6 +121,7 @@ type Props = {
   ) => void;
 
   onHandleChoiceAnswer: () => void;
+  onGameComplete?: (correct: boolean) => void;
 
   onPressTile: (tileId: string) => void;
   onRemoveTile?: (tileId: string) => void;
@@ -142,6 +146,9 @@ type Props = {
   rightItemLayouts: React.MutableRefObject<
     LayoutMap
   >;
+  promptType?: string;
+  correctAnswer?: string;
+  isBoss?: boolean;
 };
 
 const ChoiceOption = React.memo(
@@ -278,6 +285,7 @@ export default function QuizQuestionBody({
   matchScore,
 
   onHandlePairSelection,
+  onGameComplete,
 
   onChangeInput,
   onSelectOption,
@@ -287,7 +295,6 @@ export default function QuizQuestionBody({
   onPressTile,
   onRemoveTile,
   onResetChosenTileIds,
-
   onSetSelectedLeftId,
   onSetSelectedRightId,
 
@@ -295,12 +302,24 @@ export default function QuizQuestionBody({
 
   leftItemLayouts,
   rightItemLayouts,
+  promptType,
+  correctAnswer,
+  isBoss = false,
 }: Props) {
   const cardRef = useRef<View>(null);
   const answerRefs = useRef<Record<number, any>>({});
   const bankRefs = useRef<Record<string, any>>({});
   const [flyingTiles, setFlyingTiles] = useState<{ id: string; char: string; startX: number; startY: number; targetX: number; targetY: number }[]>([]);
   const [fallingTiles, setFallingTiles] = useState<{ id: string; char: string; startX: number; startY: number; targetX: number; targetY: number }[]>([]);
+
+  useEffect(() => {
+    if (activeType === 'LISTENING' && currentWord?.hiragana) {
+      Speech.speak(currentWord.hiragana, { language: 'ja' });
+    }
+    return () => {
+      Speech.stop();
+    };
+  }, [activeType, currentWord]);
 
   const handleBankPress = (tileId: string, char: string) => {
     if (chosenTileIds.length >= currentWord.hiragana.length) return;
@@ -624,24 +643,10 @@ export default function QuizQuestionBody({
       }
     });
   }, [currentMatchWords, hasSubmitted, leftItemLayouts, rightItemLayouts]);
-
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={
-        Platform.OS === 'ios'
-          ? 'padding'
-          : undefined
-      }
+    <View
+      style={[styles.bodyContainer, isBoss && { backgroundColor: 'transparent' }]}
     >
-      <ScrollView
-        contentContainerStyle={
-          styles.scrollContent
-        }
-        showsVerticalScrollIndicator={
-          false
-        }
-      >
         {(activeType ===
           'MATCH_HIRA' ||
           activeType ===
@@ -946,13 +951,18 @@ export default function QuizQuestionBody({
 
         {activeType ===
           'MULTIPLE_CHOICE' && (
-          <View style={styles.card}>
-            <Text style={styles.title}>
+          <View style={[styles.card, isBoss && { backgroundColor: 'transparent', borderWidth: 0, padding: 0 }]}>
+            <Text style={[styles.title, isBoss && { color: 'rgba(255,255,255,0.7)' }]}>
               Chọn đáp án đúng
             </Text>
 
-            <Text style={styles.word}>
-              {currentWord.kanji}
+            <Text style={[styles.word, isBoss && { color: '#FFFFFF' }]}>
+              {promptType === 'kanji_to_hira' || promptType === 'kanji_to_meaning' || !promptType
+                ? (currentWord.kanji || currentWord.hiragana || currentWord.meaning)
+                : promptType === 'hira_to_kanji'
+                ? (currentWord.hiragana || currentWord.meaning)
+                : currentWord.meaning
+              }
             </Text>
 
             <View style={styles.options}>
@@ -966,8 +976,9 @@ export default function QuizQuestionBody({
                       option
                     }
                     isCorrect={
-                      option ===
-                      currentWord.meaning
+                      correctAnswer 
+                        ? option === correctAnswer 
+                        : option === currentWord.meaning
                     }
                     showResult={
                       hasSubmitted ||
@@ -985,21 +996,99 @@ export default function QuizQuestionBody({
           </View>
         )}
 
-        {activeType ===
-          'SCRAMBLED_HIRA' && (
-          <View style={styles.card} ref={cardRef}>
-            <Text style={styles.title}>
-              Sắp xếp Hiragana
+        {activeType === 'MEMORY_CARD' && (
+          <MemoryCardGame 
+            words={currentMatchWords}
+            isRevealed={hasSubmitted}
+            onComplete={(correctMatches, wrongAttempts) => {
+              if (onGameComplete) {
+                onGameComplete(true);
+              }
+            }}
+          />
+        )}
+
+        {activeType === 'LISTENING' && (
+          <View style={[styles.card, isBoss && { backgroundColor: 'transparent', borderWidth: 0, padding: 0 }]}>
+            <Text style={[styles.title, isBoss && { color: 'rgba(255,255,255,0.7)' }]}>Nghe và chọn đáp án</Text>
+
+            <TouchableOpacity 
+              style={{ alignItems: 'center', marginBottom: 24 }}
+              onPress={() => Speech.speak(currentWord.hiragana, { language: 'ja' })}
+            >
+              <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.surfaceAlt, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: COLORS.secondary }}>
+                <Volume2 size={40} color={COLORS.primary} />
+              </View>
+              <Text style={{ marginTop: 8, color: isBoss ? 'rgba(255,255,255,0.7)' : COLORS.textSecondary, fontWeight: '700' }}>Bấm để nghe lại</Text>
+            </TouchableOpacity>
+
+            <View style={styles.options}>
+              {multipleChoiceOptions.map((option) => (
+                <ChoiceOption
+                  key={option}
+                  option={option}
+                  isSelected={selectedOption === option}
+                  isCorrect={correctAnswer ? option === correctAnswer : option === currentWord.meaning}
+                  showResult={hasSubmitted || isTimeUp}
+                  onPress={(value) => onSelectOption(value)}
+                />
+              ))}
+            </View>
+          </View>
+        )}
+
+        {activeType === 'TRUE_FALSE' && (
+          <View style={[styles.card, isBoss && { backgroundColor: 'transparent', borderWidth: 0, padding: 0 }]}>
+            <Text style={[styles.title, isBoss && { color: 'rgba(255,255,255,0.7)' }]}>Chọn nghĩa đúng</Text>
+            
+            <Text style={[styles.word, isBoss && { color: '#FFFFFF' }]}>{currentWord.kanji}</Text>
+            <Text style={[styles.meaning, { fontSize: 22, marginTop: -10, marginBottom: 30, color: isBoss ? '#FFFFFF' : COLORS.text, fontWeight: '800' }]}>
+              {multipleChoiceOptions[0]}
             </Text>
 
-            <Text style={styles.word}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+              <TouchableOpacity
+                disabled={hasSubmitted || isTimeUp}
+                onPress={() => onSelectOption('FALSE')}
+                style={[
+                  styles.choiceOption,
+                  { flex: 1, borderColor: COLORS.wrong },
+                  selectedOption === 'FALSE' && { backgroundColor: COLORS.wrong },
+                  (hasSubmitted || isTimeUp) && selectedOption === 'FALSE' && 'FALSE' !== selectedAnswer && { opacity: 0.5 }
+                ]}
+              >
+                <Text style={[styles.choiceText, { color: selectedOption === 'FALSE' ? COLORS.white : COLORS.wrong }]}>SAI</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                disabled={hasSubmitted || isTimeUp}
+                onPress={() => onSelectOption('TRUE')}
+                style={[
+                  styles.choiceOption,
+                  { flex: 1, borderColor: COLORS.correct },
+                  selectedOption === 'TRUE' && { backgroundColor: COLORS.correct },
+                  (hasSubmitted || isTimeUp) && selectedOption === 'TRUE' && 'TRUE' !== selectedAnswer && { opacity: 0.5 }
+                ]}
+              >
+                <Text style={[styles.choiceText, { color: selectedOption === 'TRUE' ? COLORS.white : COLORS.correct }]}>ĐÚNG</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {activeType ===
+          'SCRAMBLED_HIRA' && (
+          <View style={[styles.card, isBoss && { backgroundColor: 'transparent', borderWidth: 0, padding: 0 }]} ref={cardRef}>
+            <Text style={[styles.title, isBoss && { color: 'rgba(255,255,255,0.7)' }]}>Ghép câu</Text>
+
+            <Text style={[styles.word, isBoss && { color: '#FFFFFF' }]}>
               {currentWord.kanji}
             </Text>
 
             <View
               style={[styles.scrambleBox, { flexDirection: 'row', flexWrap: 'wrap', gap: 6, minHeight: 48, paddingHorizontal: 12, paddingVertical: 8 }]}
             >
-              {Array.from({ length: currentWord.hiragana.length }).map((_, index) => {
+              {Array.from({ length: (currentWord.hiragana || '').length }).map((_, index) => {
                 const tileId = chosenTileIds[index];
                 const tile = tileId ? tiles.find(t => t.id === tileId) : null;
                 
@@ -1007,7 +1096,12 @@ export default function QuizQuestionBody({
                   <View
                     key={`ans-slot-${index}`}
                     ref={el => { answerRefs.current[index] = el; }}
-                    style={[styles.tile, { backgroundColor: tile ? COLORS.primary : 'rgba(0,0,0,0.05)', borderWidth: tile ? 0 : 1, borderColor: 'rgba(0,0,0,0.1)', borderStyle: 'dashed' }]}
+                    style={[styles.tile, { 
+                      backgroundColor: tile ? COLORS.primary : (isBoss ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'), 
+                      borderWidth: tile ? 0 : 2, 
+                      borderColor: isBoss ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.1)', 
+                      borderStyle: 'dashed' 
+                    }]}
                   >
                     {tile && !fallingTiles.some(f => f.id === tile.id) ? (
                       <TouchableOpacity
@@ -1035,7 +1129,7 @@ export default function QuizQuestionBody({
                 return (
                   <View key={tile.id} ref={el => { bankRefs.current[tile.id] = el; }}>
                     <TouchableOpacity
-                      disabled={used || hasSubmitted || chosenTileIds.length >= currentWord.hiragana.length}
+                      disabled={used || hasSubmitted || chosenTileIds.length >= (currentWord.hiragana || '').length}
                       onPress={() => handleBankPress(tile.id, tile.char)}
                       style={[
                         styles.tile,
@@ -1073,12 +1167,10 @@ export default function QuizQuestionBody({
 
         {activeType ===
           'WRITE_HIRA' && (
-          <View style={styles.card}>
-            <Text style={styles.title}>
-              Viết Hiragana
-            </Text>
+          <View style={[styles.card, isBoss && { backgroundColor: 'transparent', borderWidth: 0, padding: 0 }]}>
+            <Text style={[styles.title, isBoss && { color: 'rgba(255,255,255,0.7)' }]}>Viết chữ Hiragana</Text>
 
-            <Text style={styles.word}>
+            <Text style={[styles.word, isBoss && { color: '#FFFFFF' }]}>
               {currentWord.kanji}
             </Text>
 
@@ -1106,12 +1198,14 @@ export default function QuizQuestionBody({
             </Text>
           </View>
         )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  bodyContainer: {
+    width: '100%',
+  },
   container: {
     flex: 1,
     backgroundColor:

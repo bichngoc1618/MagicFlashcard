@@ -34,6 +34,7 @@ import {
   getLearnedCards,
   updateProfile,
   addXp,
+  updateNodeStars,
 } from '../controllers/progressController.js';
 import { register, login, updateGamificationStats, refillHearts, deductHearts } from '../controllers/authController.js';
 import db from '../config/db.js';
@@ -75,6 +76,7 @@ router.get('/progress/learned-cards/:userId/:materialId', getLearnedCards);
 router.post('/progress/complete-quiz', completeQuizSession);
 router.post('/progress/save-quiz-answer', saveQuizAnswer);
 router.post('/progress/update-node-index', updateNodeIndex);
+router.post('/progress/node-stars', updateNodeStars);
 router.post('/flashcard/complete', completeFlashcardBatch);
 router.post('/quiz/complete-node', completeQuizNode);
 router.post('/progress/srs-review', completeSrsReview);

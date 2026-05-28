@@ -1,4 +1,4 @@
-export type QuizType = 'MATCH_MEANING' | 'MATCH_HIRA' | 'MULTIPLE_CHOICE' | 'WRITE_HIRA' | 'SCRAMBLED_HIRA';
+export type QuizType = 'MATCH_MEANING' | 'MATCH_HIRA' | 'MULTIPLE_CHOICE' | 'WRITE_HIRA' | 'SCRAMBLED_HIRA' | 'LISTENING' | 'TRUE_FALSE' | 'MEMORY_CARD' | 'PRACTICE_1' | 'PRACTICE_2' | 'PRACTICE_3' | 'FINAL_BOSS';
 
 export type QuizWord = {
   id: string;
@@ -36,6 +36,7 @@ export type QuizQuestion = {
   pool?: QuizWord[];
   options?: string[];
   correctAnswer?: string;
+  promptType?: string;
 };
 export interface QuizUIProps {
   activeType: QuizType;
@@ -48,5 +49,6 @@ export interface QuizUIProps {
   isCorrect: boolean | null;
   questionIndex: number;
   totalQuestionCount: number;
-  // ... các props khác
+  promptType?: string;
+  correctAnswer?: string;
 }

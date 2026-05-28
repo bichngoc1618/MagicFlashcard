@@ -304,6 +304,15 @@ export const getStudyPath = async (req, res) => {
     const completedNodes = Math.min(currentActiveNodeIndex, totalNodes);
     const progressPercentage = totalNodes > 0 ? Math.round((completedNodes / totalNodes) * 100) : 0;
 
+    const [starRows] = await db.query(
+      'SELECT node_id, stars FROM user_node_stars WHERE user_id = ? AND material_id = ?',
+      [userId, materialId]
+    );
+    const nodeStars = {};
+    starRows.forEach(row => {
+      nodeStars[row.node_id] = row.stars;
+    });
+
     return res.json({
       material,
       totalCards,
@@ -314,6 +323,7 @@ export const getStudyPath = async (req, res) => {
       progressPercentage,
       journeyNodes,
       currentActiveNodeIndex,
+      nodeStars,
     });
   } catch (error) {
     console.error('GET /progress/study-path error', error);
@@ -771,6 +781,43 @@ export const updateNodeIndex = async (req, res) => {
   } catch (error) {
     console.error('POST /progress/update-node-index error', error);
     return res.status(500).json({ error: 'Không thể cập nhật node index.' });
+  }
+};
+
+export const updateNodeStars = async (req, res) => {
+  try {
+    const { userId, materialId, nodeId, stars } = req.body;
+    if (!userId || !materialId || !nodeId || stars === undefined) {
+      return res.status(400).json({ error: 'Thiếu tham số bắt buộc.' });
+    }
+
+    // Lấy số sao hiện tại
+    const [rows] = await db.query(
+      'SELECT stars FROM user_node_stars WHERE user_id = ? AND material_id = ? AND node_id = ?',
+      [userId, materialId, nodeId]
+    );
+
+    if (rows.length === 0) {
+      // Chưa có thì insert
+      await db.query(
+        'INSERT INTO user_node_stars (user_id, material_id, node_id, stars) VALUES (?, ?, ?, ?)',
+        [userId, materialId, nodeId, stars]
+      );
+    } else {
+      // Đã có thì chỉ update nếu sao mới cao hơn
+      const currentStars = rows[0].stars;
+      if (stars > currentStars) {
+        await db.query(
+          'UPDATE user_node_stars SET stars = ? WHERE user_id = ? AND material_id = ? AND node_id = ?',
+          [stars, userId, materialId, nodeId]
+        );
+      }
+    }
+
+    return res.json({ success: true, stars });
+  } catch (error) {
+    console.error('POST /progress/node-stars error', error);
+    return res.status(500).json({ error: 'Không thể cập nhật sao.' });
   }
 };
 

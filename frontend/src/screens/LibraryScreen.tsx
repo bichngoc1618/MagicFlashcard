@@ -62,6 +62,17 @@ const getMaterialColorStyle = (title: string, isDark: boolean) => {
   };
 };
 
+const KeyboardDismissalWrapper = ({ children }: { children: React.ReactNode }) => {
+  if (Platform.OS === 'web') {
+    return <>{children}</>;
+  }
+  return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      {children}
+    </TouchableWithoutFeedback>
+  );
+};
+
 export default function StudyScreen({ navigation }: StudyScreenProps) {
   const { user, totalXp, notificationCount, refreshNotificationCount } = useAuthContext();
   const { colors, theme } = useTheme();
@@ -297,7 +308,7 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
 
       {/* POPUP THÊM MỚI CHỐNG BÀN PHÍM ĐÈ HOÀN HẢO */}
       <Modal visible={addModalVisible} transparent animationType="fade" onRequestClose={closeAddModal}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <KeyboardDismissalWrapper>
           <View style={styles.modalOverlay}>
             <KeyboardAvoidingView
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -362,7 +373,7 @@ export default function StudyScreen({ navigation }: StudyScreenProps) {
               </View>
             </KeyboardAvoidingView>
           </View>
-        </TouchableWithoutFeedback>
+        </KeyboardDismissalWrapper>
       </Modal>
     </ScreenContainer>
   );

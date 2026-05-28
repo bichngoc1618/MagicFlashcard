@@ -1,4 +1,5 @@
 import { BACKEND_URL } from '../config/BackendConfig';
+import { getCachedData, setCachedData, queueMutation, syncPendingMutations } from '../utils/offlineCache';
 
 const parseJson = async (response: Response) => {
   const text = await response.text();
@@ -9,7 +10,53 @@ const parseJson = async (response: Response) => {
   }
 };
 
-const request = async (path: string, options: RequestInit = {}) => {
+const getCacheKeyForPath = (path: string): string | null => {
+  if (path.startsWith('/api/materials/')) {
+    const parts = path.split('/');
+    const userId = parts[parts.length - 1];
+    if (/^\d+$/.test(userId)) {
+      return `materials:${userId}`;
+    }
+  }
+  if (path.startsWith('/api/progress/study-path/')) {
+    const parts = path.split('/');
+    const materialId = parts[parts.length - 1];
+    const userId = parts[parts.length - 2];
+    return `studyPath:${userId}:${materialId}`;
+  }
+  if (path.startsWith('/api/flashcards/')) {
+    const cleanPath = path.split('?')[0];
+    const parts = cleanPath.split('/');
+    const materialId = parts[parts.length - 1];
+    if (/^\d+$/.test(materialId)) {
+      return `flashcards:${materialId}`;
+    }
+  }
+  if (path.startsWith('/api/progress/learned-cards/')) {
+    const parts = path.split('/');
+    const materialId = parts[parts.length - 1];
+    const userId = parts[parts.length - 2];
+    return `learnedCards:${userId}:${materialId}`;
+  }
+  if (path.startsWith('/api/user/stats/')) {
+    const parts = path.split('/');
+    const userId = parts[parts.length - 1];
+    return `userStats:${userId}`;
+  }
+  if (path.startsWith('/api/profile/')) {
+    const parts = path.split('/');
+    const userId = parts[parts.length - 1];
+    return `profile:${userId}`;
+  }
+  if (path.startsWith('/api/notifications/')) {
+    const parts = path.split('/');
+    const userId = parts[parts.length - 1];
+    return `notifications:${userId}`;
+  }
+  return null;
+};
+
+const syncRequest = async (path: string, options: any) => {
   const url = `${BACKEND_URL}${path}`;
   const response = await fetch(url, {
     headers: {
@@ -20,9 +67,91 @@ const request = async (path: string, options: RequestInit = {}) => {
   });
   const data = await parseJson(response);
   if (!response.ok) {
-    throw new Error(data?.error || `Request failed ${response.status}`);
+    throw new Error(data?.error || `Sync request failed ${response.status}`);
   }
   return data;
+};
+
+export const triggerSyncQueue = async () => {
+  try {
+    await syncPendingMutations(syncRequest);
+  } catch (e) {
+    console.warn('Failed to manually sync queue:', e);
+  }
+};
+
+const request = async (path: string, options: RequestInit = {}) => {
+  const method = options.method || 'GET';
+  const cacheKey = getCacheKeyForPath(path);
+
+  if (method === 'GET') {
+    try {
+      const url = `${BACKEND_URL}${path}`;
+      const response = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+        ...options,
+      });
+      const data = await parseJson(response);
+      if (!response.ok) {
+        throw new Error(data?.error || `Request failed ${response.status}`);
+      }
+      
+      if (cacheKey) {
+        await setCachedData(cacheKey, data);
+      }
+      
+      setTimeout(() => {
+        syncPendingMutations(syncRequest).catch(err => console.warn('Background sync failed:', err));
+      }, 50);
+      
+      return data;
+    } catch (error: any) {
+      if (cacheKey) {
+        console.log(`🌐 Offline mode: falling back to cache for ${path}`);
+        const cached = await getCachedData(cacheKey);
+        if (cached !== null) {
+          return cached;
+        }
+      }
+      throw error;
+    }
+  } else {
+    try {
+      const url = `${BACKEND_URL}${path}`;
+      const response = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+        ...options,
+      });
+      const data = await parseJson(response);
+      if (!response.ok) {
+        throw new Error(data?.error || `Request failed ${response.status}`);
+      }
+      
+      setTimeout(() => {
+        syncPendingMutations(syncRequest).catch(err => console.warn('Background sync failed:', err));
+      }, 50);
+      
+      return data;
+    } catch (error: any) {
+      const isNetworkError = error.message?.includes('Network request failed') || 
+                             error.message?.includes('Failed to fetch') ||
+                             error.message?.includes('connection') ||
+                             error instanceof TypeError;
+      
+      if (isNetworkError) {
+        console.log(`🌐 Offline mode: queueing mutation for ${method} ${path}`);
+        await queueMutation(path, options);
+        return { success: true, offline: true };
+      }
+      throw error;
+    }
+  }
 };
 
 export const login = async (email: string, password: string) => {
@@ -313,6 +442,18 @@ export const markCardLearned = async (payload: {
 
 export const getLearnedCards = async (userId: number, materialId: number) => {
   return request(`/api/progress/learned-cards/${userId}/${materialId}`);
+};
+
+export const saveNodeStars = async (payload: {
+  userId: number;
+  materialId: number;
+  nodeId: string;
+  stars: number;
+}) => {
+  return request('/api/progress/node-stars', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 };
 
 export const updateProgress = async (payload: {

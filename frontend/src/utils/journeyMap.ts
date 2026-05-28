@@ -11,12 +11,14 @@ export interface VocabItem {
 
 export type NodeType =
   | 'FLASHCARD'
-  | 'MATCHING_KANA'
-  | 'MATCHING_MEANING'
-  | 'MULTICHOICE'
-  | 'SPELLING'
+  | 'MATCH_HIRA'
+  | 'MATCH_MEANING'
+  | 'PRACTICE_2'
+  | 'PRACTICE_3'
   | 'REVIEW'
-  | 'FINAL_BOSS';
+  | 'FINAL_BOSS'
+  | 'SRS_REVIEW'
+  | 'TREASURE_CHEST';
 
 export interface JourneyNode {
   id: string;
@@ -28,61 +30,22 @@ export interface JourneyNode {
 }
 
 /**
- * Task 1.1: Thuật toán chia bộ thẻ
- * Logic chia nhóm 10 từ.
- * Xử lý số dư R >= 6 (tạo nhóm mới) và R < 6 (rải ngược về các nhóm trước).
+ * Thuật toán chia bộ thẻ
+ * Chia nhóm tối đa 10 từ.
+ * Đảm bảo các từ mới thêm luôn nằm ở cuối (gộp vào node chưa đầy hoặc tạo node mới)
  */
 export function chunkVocabulary<T>(vocabList: T[]): T[][] {
   return chunkVocabularyHelper(vocabList);
 }
 
 function chunkVocabularyHelper<T>(vocabList: T[]): T[][] {
-  const N = vocabList.length;
-  if (N === 0) return [];
-
   const CHUNK_SIZE = 10;
-  const numFullChunks = Math.floor(N / CHUNK_SIZE);
-  const R = N % CHUNK_SIZE;
-
-  if (numFullChunks === 0) {
-    // Nếu tổng số từ < 10, gộp hết vào 1 chunk
-    return [vocabList];
-  }
-
   const chunks: T[][] = [];
-
-  if (R >= 6) {
-    // R >= 6: Tạo chunk mới cho số dư
-    for (let i = 0; i < numFullChunks; i++) {
-      chunks.push(vocabList.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE));
-    }
-    chunks.push(vocabList.slice(numFullChunks * CHUNK_SIZE));
-  } else if (R > 0) {
-    // R < 6: Phân phối đều số dư ngược về các chunk trước
-    const chunkSizes = new Array(numFullChunks).fill(CHUNK_SIZE);
-    let remaining = R;
-    let idx = numFullChunks - 1; // Bắt đầu từ chunk cuối
-
-    while (remaining > 0) {
-      chunkSizes[idx]++;
-      remaining--;
-      idx--;
-      if (idx < 0) idx = numFullChunks - 1; // Quay vòng nếu cần
-    }
-
-    let start = 0;
-    for (let i = 0; i < numFullChunks; i++) {
-      const size = chunkSizes[i];
-      chunks.push(vocabList.slice(start, start + size));
-      start += size;
-    }
-  } else {
-    // R = 0: Vừa khít
-    for (let i = 0; i < numFullChunks; i++) {
-      chunks.push(vocabList.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE));
-    }
+  
+  for (let i = 0; i < vocabList.length; i += CHUNK_SIZE) {
+    chunks.push(vocabList.slice(i, i + CHUNK_SIZE));
   }
-
+  
   return chunks;
 }
 
@@ -118,10 +81,10 @@ export function generateJourneyNodes(chunks: VocabItem[][]): JourneyNode[] {
     });
     topPointer += verticalGap;
 
-    // Node 2: MATCHING_KANA (Center)
+    // Node 2: MATCH_HIRA (Center) - Nối chữ
     nodes.push({
       id: `batch-${batchIndex}-kana`,
-      nodeType: 'MATCHING_KANA',
+      nodeType: 'MATCH_HIRA',
       batchIndex,
       words: chunk,
       left: centerPosition,
@@ -129,10 +92,10 @@ export function generateJourneyNodes(chunks: VocabItem[][]): JourneyNode[] {
     });
     topPointer += verticalGap;
 
-    // Node 3: MATCHING_MEANING (Left or Right opposite to Flashcard)
+    // Node 3: MATCH_MEANING (Left or Right opposite to Flashcard)
     nodes.push({
-      id: `batch-${batchIndex}-meaning`,
-      nodeType: 'MATCHING_MEANING',
+      id: `batch-${batchIndex}-match-meaning`,
+      nodeType: 'MATCH_MEANING',
       batchIndex,
       words: chunk,
       left: isLeft ? 400 - sideOffset : sideOffset,
@@ -140,10 +103,10 @@ export function generateJourneyNodes(chunks: VocabItem[][]): JourneyNode[] {
     });
     topPointer += verticalGap;
 
-    // Node 4: MULTICHOICE (Center)
+    // Node 4: PRACTICE_2 (Center) - Đa giác quan
     nodes.push({
-      id: `batch-${batchIndex}-multi`,
-      nodeType: 'MULTICHOICE',
+      id: `batch-${batchIndex}-practice-2`,
+      nodeType: 'PRACTICE_2',
       batchIndex,
       words: chunk,
       left: centerPosition,
@@ -151,10 +114,23 @@ export function generateJourneyNodes(chunks: VocabItem[][]): JourneyNode[] {
     });
     topPointer += verticalGap;
 
-    // Node 5: SPELLING (Back to original side)
+    // Rương báu (Thỉnh thoảng xuất hiện, luôn có ở cụm đầu tiên để người dùng dễ nhận thấy)
+    if (batchIndex === 0 || batchIndex % 2 !== 0) {
+      nodes.push({
+        id: `batch-${batchIndex}-treasure`,
+        nodeType: 'TREASURE_CHEST',
+        batchIndex,
+        words: [],
+        left: isLeft ? centerPosition + 70 : centerPosition - 70, // Đẩy ra xa một chút cho cân đối
+        top: topPointer - (verticalGap / 2),
+      });
+      // Không cộng topPointer vì rương báu nằm lệch ngang giữa 2 node chính
+    }
+
+    // Node 5: PRACTICE_3 (Back to original side) - Thực chiến
     nodes.push({
-      id: `batch-${batchIndex}-spell`,
-      nodeType: 'SPELLING',
+      id: `batch-${batchIndex}-practice-3`,
+      nodeType: 'PRACTICE_3',
       batchIndex,
       words: chunk,
       left: xBase,

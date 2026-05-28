@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useGlobalUI } from './GlobalUIContext';
 
-import { login as loginApi, register as registerApi, updateGamificationStats, refillHearts, getUserStats, deductHearts, getNotifications } from '../api/api';
+import { login as loginApi, register as registerApi, updateGamificationStats, refillHearts, getUserStats, deductHearts, getNotifications, triggerSyncQueue } from '../api/api';
 
 export type UserProfile = {
   id: number;
@@ -57,6 +57,35 @@ export const AuthProvider = ({ children }: any) => {
   const [streakCount, setStreakCount] = useState<number>(0);
   const [lastStudyDate, setLastStudyDate] = useState<string>('');
   const [globalHearts, setGlobalHearts] = useState<number>(5);
+
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  // Load saved session on mount
+  useEffect(() => {
+    const loadSavedSession = async () => {
+      try {
+        const savedUserStr = await AsyncStorage.getItem('user');
+        if (savedUserStr) {
+          const savedUser = JSON.parse(savedUserStr);
+          setUser(savedUser);
+          
+          const savedStatsStr = await AsyncStorage.getItem('userStats');
+          if (savedStatsStr) {
+            const stats = JSON.parse(savedStatsStr);
+            setTotalXp(stats.total_xp || stats.totalXp || 0);
+            setStreakCount(stats.streak_count || stats.streakCount || 0);
+            setLastStudyDate(stats.last_study_date || stats.lastStudyDate || '');
+            setGlobalHearts(stats.global_hearts ?? stats.globalHearts ?? 5);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load saved session:', e);
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+    loadSavedSession();
+  }, []);
   // Export setGlobalHearts to allow external updates (e.g. from QuizScreen)
   const setGlobalHeartsPublic = (val: number) => setGlobalHearts(val);
   
@@ -64,6 +93,9 @@ export const AuthProvider = ({ children }: any) => {
   const [topUpCount, setTopUpCount] = useState<number>(0);
   const [topUpDate, setTopUpDate] = useState<string>('');
   const [notificationCount, setNotificationCount] = useState<number>(0);
+
+  // Cờ đánh dấu đã restore tim trong phiên hiện tại (tránh gọi lại khi refreshUserStats chạy nhiều lần)
+  const heartsRestoredRef = useRef<string>('');
 
   const setGamificationState = (profile: any) => {
     console.log('🎮 Setting gamification state:', { 
@@ -96,6 +128,11 @@ export const AuthProvider = ({ children }: any) => {
     };
     setUser(profile);
     setGamificationState(result);
+    
+    // Cache user session and gamification stats
+    await AsyncStorage.setItem('user', JSON.stringify(profile));
+    await AsyncStorage.setItem('userStats', JSON.stringify(result));
+    
     return profile;
   };
 
@@ -111,6 +148,16 @@ export const AuthProvider = ({ children }: any) => {
     setStreakCount(0);
     setLastStudyDate('');
     setGlobalHearts(5);
+    
+    // Cache user session and stats
+    await AsyncStorage.setItem('user', JSON.stringify(profile));
+    await AsyncStorage.setItem('userStats', JSON.stringify({
+      total_xp: 0,
+      streak_count: 0,
+      last_study_date: '',
+      global_hearts: 5
+    }));
+    
     return profile;
   };
 
@@ -120,6 +167,10 @@ export const AuthProvider = ({ children }: any) => {
     setStreakCount(0);
     setLastStudyDate('');
     setGlobalHearts(5);
+    
+    // Clear user session cache
+    AsyncStorage.removeItem('user').catch(console.error);
+    AsyncStorage.removeItem('userStats').catch(console.error);
   };
 
   const updateUser = (updates: Partial<UserProfile>) => {
@@ -202,8 +253,12 @@ const deductHeartOnFailure = useCallback(async (): Promise<number> => {
       const currentDate = getLocalDateString(new Date());
       const dbLastDate = dbLastDateRaw ? getLocalDateString(dbLastDateRaw) : null;
 
-      if (dbLastDate && dbLastDate < currentDate) {
+      // Chỉ restore tim 1 lần duy nhất mỗi ngày trong phiên này
+      const alreadyRestoredToday = heartsRestoredRef.current === currentDate;
+
+      if (dbLastDate && dbLastDate < currentDate && !alreadyRestoredToday && (stats.global_hearts ?? 0) < 5) {
         console.log('🌅 New day detected - restoring hearts for new day');
+        heartsRestoredRef.current = currentDate;
         await restoreHeartsForNewDay(user.id, currentDate, stats.global_hearts ?? 0);
         stats.global_hearts = 5;
       }
@@ -234,12 +289,18 @@ const deductHeartOnFailure = useCallback(async (): Promise<number> => {
   useEffect(() => {
     let subscription: any;
     if (user?.id) {
+      // Sync mutations queued while offline when app starts or active user shifts
+      triggerSyncQueue().catch(err => console.warn('Sync failed:', err));
+
       refreshUserStats();
       refreshNotificationCount();
 
       subscription = AppState.addEventListener('change', (nextAppState) => {
         // Chỉ gọi API khi thực sự chuyển từ background/inactive → active
         if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+          // Sync mutations when returning to foreground
+          triggerSyncQueue().catch(err => console.warn('Sync failed:', err));
+
           const now = Date.now();
           // Throttle: chỉ gọi lại sau ít nhất 30 giây
           if (now - lastRefreshRef.current > 30000) {
@@ -371,6 +432,10 @@ const deductHeartOnFailure = useCallback(async (): Promise<number> => {
       return undefined;
     }
   };
+
+  if (isInitializing) {
+    return null;
+  }
 
   return (
     <AuthContext.Provider

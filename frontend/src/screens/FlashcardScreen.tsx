@@ -15,7 +15,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import SharkLoader from '../components/ui/SharkLoader';
 import BottomNavigation from '../components/BottomNavigation';
 import ExitConfirmModal from '../components/ExitConfirmModal';
-import { getFlashcards, markCardLearned, getLearnedCards } from '../api/api';
+import { getFlashcards, markCardLearned, getLearnedCards, saveNodeStars } from '../api/api';
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { chunkVocabulary } from '../utils/journeyMap';
@@ -250,6 +250,19 @@ export default function FlashcardScreen({ navigation, route }: Props) {
     setShowPracticeConfirm(true);
   };
 
+  const grantStarsIfMemorized = async () => {
+    if (isBatchAllMemorized && user?.id) {
+      try {
+        await saveNodeStars({
+          userId: user.id,
+          materialId,
+          nodeId: `batch-${batchIndex}-flashcard`,
+          stars: 3
+        });
+      } catch (err) {}
+    }
+  };
+
   const confirmPractice = async () => {
     setShowPracticeConfirm(false);
     
@@ -257,6 +270,7 @@ export default function FlashcardScreen({ navigation, route }: Props) {
       if (user?.id) {
         await updateStudyPathIndex(user.id, materialId, nodeIndex + 1);
       }
+      await grantStarsIfMemorized();
     } catch (e) {
       console.warn('Không thể lưu tiến độ:', e);
     }
@@ -274,25 +288,40 @@ export default function FlashcardScreen({ navigation, route }: Props) {
     });
   };
 
-  const handleConfirmExit = () => {
+  const handleConfirmExit = async () => {
     setShowExitConfirm(false);
+    await grantStarsIfMemorized();
     navigation.navigate('MainTabs' as any, {
       screen: 'StudyJourney',
       params: { materialId },
     });
   };
 
-  const frontAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotateY: `${spin.value}deg` }],
-    backfaceVisibility: 'hidden',
-  }));
+  const frontAnimatedStyle = useAnimatedStyle(() => {
+    const opacity = spin.value > 90 ? 0 : 1;
+    return {
+      transform: [
+        { perspective: 1000 },
+        { rotateY: `${spin.value}deg` }
+      ],
+      backfaceVisibility: 'hidden',
+      opacity,
+    };
+  });
 
-  const backAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotateY: `${spin.value + 180}deg` }],
-    backfaceVisibility: 'hidden',
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-  }));
+  const backAnimatedStyle = useAnimatedStyle(() => {
+    const opacity = spin.value > 90 ? 1 : 0;
+    return {
+      transform: [
+        { perspective: 1000 },
+        { rotateY: `${spin.value + 180}deg` }
+      ],
+      backfaceVisibility: 'hidden',
+      position: 'absolute',
+      top: 0, left: 0, right: 0, bottom: 0,
+      opacity,
+    };
+  });
 
   const rotate = position.x.interpolate({
     inputRange: [-width / 2, 0, width / 2],

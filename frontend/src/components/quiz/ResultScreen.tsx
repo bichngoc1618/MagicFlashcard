@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Alert
 import { X, CheckCircle2, AlertCircle, Trophy, Eye, RefreshCw, ArrowRight, ArrowLeft, BookOpen, Volume2 } from 'lucide-react-native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, withDelay, withRepeat, interpolate, Easing, runOnJS, withSequence } from 'react-native-reanimated';
-import { Flame, Heart } from 'lucide-react-native';
+import { Flame, Heart, Star } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import ScreenContainer from '../ScreenContainer';
 import { useTheme } from '../../context/ThemeContext';
@@ -138,7 +138,7 @@ const ShatteredHeartAnim = () => {
   useEffect(() => {
     setTimeout(() => {
       mascotScale.value = withSpring(1.0, { damping: 11, stiffness: 90 });
-      
+
       // Hiệu ứng nhịp đập nhẹ trước khi vỡ tan cơ học
       heartScale.value = withSequence(
         withTiming(1.1, { duration: 150 }),
@@ -153,7 +153,7 @@ const ShatteredHeartAnim = () => {
 
   const mascotStyle = useAnimatedStyle(() => ({ transform: [{ scale: mascotScale.value }] }));
   const mainHeartStyle = useAnimatedStyle(() => ({ transform: [{ scale: heartScale.value }] }));
-  
+
   const leftShardStyle = useAnimatedStyle(() => ({
     opacity: heartOpacity.value,
     transform: [
@@ -178,14 +178,14 @@ const ShatteredHeartAnim = () => {
   return (
     <View style={{ alignItems: 'center', justifyContent: 'center', marginBottom: 20, height: 150 }}>
       {/* Nhân vật Shark Magic khóc thương tâm */}
-      <Animated.Image 
-        source={require('../../../assets/sharkCry.png')} 
-        style={[{ width: 120, height: 120, resizeMode: 'contain' }, mascotStyle]} 
+      <Animated.Image
+        source={require('../../../assets/sharkCry.png')}
+        style={[{ width: 120, height: 120, resizeMode: 'contain' }, mascotStyle]}
       />
 
       {/* KHU VỰC ĐIỀU PHỐI CÁC MẢNH VỠ CƠ HỌC KHỚP NHAU */}
       <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }, mainHeartStyle]} pointerEvents="none">
-        
+
         {/* Mảnh nửa trái tim bên Trái
         <Animated.View style={[{ position: 'absolute', left: '50%', marginLeft: -32, top: 26, width: 32, height: 64, overflow: 'hidden' }, leftShardStyle]}>
           <Heart size={64} color="#FF4B4B" fill="#FF4B4B" style={{ left: 0 }} />
@@ -199,6 +199,116 @@ const ShatteredHeartAnim = () => {
         {/* Các hạt bụi tim vụn búng ra khi va chạm nứt vỡ */}
         <Animated.View style={[{ position: 'absolute', top: 40 }, spark1Style]}><Heart size={14} color="#FF4B4B" fill="#FF4B4B" opacity={0.8} /></Animated.View>
         <Animated.View style={[{ position: 'absolute', top: 40 }, spark2Style]}><Heart size={14} color="#FF4B4B" fill="#FF4B4B" opacity={0.8} /></Animated.View>
+      </Animated.View>
+    </View>
+  );
+};
+
+// --- HIỆU ỨNG BOSS PHÂN THẮNG BẠI ---
+const BossResultAnim = ({ isVictory }: { isVictory: boolean }) => {
+  const scale = useSharedValue(0.5);
+  const opacity = useSharedValue(1);
+  const shakeY = useSharedValue(0);
+
+  const leftShardX = useSharedValue(0);
+  const leftShardY = useSharedValue(0);
+  const leftShardRotate = useSharedValue(0);
+
+  const rightShardX = useSharedValue(0);
+  const rightShardY = useSharedValue(0);
+  const rightShardRotate = useSharedValue(0);
+
+  const triggerBossShatter = () => {
+    leftShardX.value = withTiming(-60, { duration: 800, easing: Easing.out(Easing.quad) });
+    leftShardY.value = withTiming(80, { duration: 800, easing: Easing.in(Easing.cubic) });
+    leftShardRotate.value = withTiming(-45, { duration: 800 });
+
+    rightShardX.value = withTiming(60, { duration: 800, easing: Easing.out(Easing.quad) });
+    rightShardY.value = withTiming(80, { duration: 800, easing: Easing.in(Easing.cubic) });
+    rightShardRotate.value = withTiming(45, { duration: 800 });
+
+    opacity.value = withDelay(400, withTiming(0, { duration: 400 }));
+  };
+
+  useEffect(() => {
+    if (isVictory) {
+      scale.value = withSequence(
+        withTiming(1.3, { duration: 400 }),
+        withRepeat(
+          withSequence(
+            withTiming(1.4, { duration: 50 }),
+            withTiming(1.2, { duration: 50 })
+          ),
+          5,
+          true
+        ),
+        withTiming(1.3, { duration: 100 }, () => {
+          'worklet';
+          runOnJS(triggerBossShatter)();
+        })
+      );
+    } else {
+      scale.value = withSpring(1.5, { damping: 10, stiffness: 80 });
+      shakeY.value = withRepeat(
+        withSequence(
+          withTiming(-10, { duration: 150 }),
+          withTiming(0, { duration: 150 })
+        ),
+        -1,
+        true
+      );
+    }
+  }, [isVictory]);
+
+  const leftShardStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [
+      { translateX: leftShardX.value },
+      { translateY: leftShardY.value },
+      { rotate: `${leftShardRotate.value}deg` }
+    ],
+  }));
+
+  const rightShardStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [
+      { translateX: rightShardX.value },
+      { translateY: rightShardY.value },
+      { rotate: `${rightShardRotate.value}deg` }
+    ],
+  }));
+
+  const defeatStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: scale.value },
+      { translateY: shakeY.value }
+    ]
+  }));
+
+  const victoryScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }]
+  }));
+
+  if (!isVictory) {
+    return (
+      <View style={{ alignItems: 'center', justifyContent: 'center', marginBottom: 20, height: 150 }}>
+        <Animated.Image
+          source={require('../../../assets/evil_boss.png')}
+          style={[{ width: 120, height: 120, resizeMode: 'contain' }, defeatStyle]}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', marginBottom: 20, height: 150 }}>
+      <Animated.View style={[{ width: 120, height: 120 }, victoryScaleStyle]}>
+        <Animated.View style={[{ position: 'absolute', width: 60, height: 120, overflow: 'hidden' }, leftShardStyle]}>
+          <Image source={require('../../../assets/evil_boss.png')} style={{ width: 120, height: 120, resizeMode: 'contain' }} />
+        </Animated.View>
+        <Animated.View style={[{ position: 'absolute', left: 60, width: 60, height: 120, overflow: 'hidden' }, rightShardStyle]}>
+          <Image source={require('../../../assets/evil_boss.png')} style={{ width: 120, height: 120, resizeMode: 'contain', left: -60 }} />
+        </Animated.View>
       </Animated.View>
     </View>
   );
@@ -325,7 +435,7 @@ function MatchingReview({ answers, colors, isDark }: {
       </TouchableOpacity>
 
       <View style={{ flexDirection: 'row', width: containerWidth, position: 'relative' }}>
-        
+
         {/* SVG Lines */}
         <View style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]} pointerEvents="none">
           <Svg width={containerWidth} height={words.length * (ITEM_HEIGHT + GAP)}>
@@ -510,14 +620,14 @@ export default function ResultScreen({
 
   // --- CHẾ ĐỘ XEM LẠI LỖI SAI DẠNG LIST VOCABULARY TINH GỌN ---
 
-  if (showingFailed && failedAnswers.length > 0) {
+  if (showingFailed && (failedAnswers.length > 0 || isMatchMode)) {
     return (
       <ScreenContainer>
         <View style={[styles.mainContainer, { backgroundColor: colors.background }]}>
           {/* Header */}
           <View style={styles.reviewHeader}>
-            <TouchableOpacity 
-              onPress={() => setShowingFailed(false)} 
+            <TouchableOpacity
+              onPress={() => setShowingFailed(false)}
               style={[styles.closeButton, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}
             >
               <X size={18} color={colors.text} />
@@ -525,13 +635,13 @@ export default function ResultScreen({
             <Text style={[styles.reviewTitle, { color: colors.text }]}>
               {isMatchMode ? 'Đáp án đúng nối từ' : 'Danh sách câu sai'}
             </Text>
-            <View style={{ width: 42 }} /> 
+            <View style={{ width: 42 }} />
           </View>
 
           {/* List Vocabulary cuộn phẳng chuyên nghiệp */}
           {isMatchMode ? (
-            <ScrollView 
-              style={styles.reviewListScroll} 
+            <ScrollView
+              style={styles.reviewListScroll}
               showsVerticalScrollIndicator={false}
               bounces={false}
             >
@@ -542,15 +652,15 @@ export default function ResultScreen({
               />
             </ScrollView>
           ) : (
-            <ScrollView 
-              style={styles.reviewListScroll} 
+            <ScrollView
+              style={styles.reviewListScroll}
               showsVerticalScrollIndicator={false}
               bounces={false}
             >
               {failedAnswers.map((item, idx) => (
-                <View key={item.word.id || idx} style={[styles.listItem, { borderColor: isDark ? '#1E293B' : '#F1F5F9', backgroundColor: colors.card }]}>
+                <View key={`${item.word?.id}-${idx}`} style={[styles.listItem, { borderColor: isDark ? '#1E293B' : '#F1F5F9', backgroundColor: colors.card }]}>
                   <Text style={[styles.listIndex, { color: themePrimaryColor }]}>{idx + 1}.</Text>
-                  
+
                   <View style={styles.listTextContainer}>
                     <Text style={[styles.listText, { color: colors.text }]}>
                       {item.word.kanji || item.word.hiragana || '—'}
@@ -561,7 +671,7 @@ export default function ResultScreen({
                   </View>
 
                   {item.word.hiragana && (
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       activeOpacity={0.7}
                       onPress={() => playSound(item.word.hiragana)}
                       style={[styles.miniSoundBtn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}
@@ -606,9 +716,9 @@ export default function ResultScreen({
             <View style={[styles.xpRewardBadge, { backgroundColor: isDark ? 'rgba(59, 122, 102, 0.2)' : '#E9FBF5', borderColor: themePrimaryColor }]}>
               <Text style={[styles.xpRewardText, { color: themePrimaryColor }]}>+100 XP Thưởng</Text>
             </View>
-            <TouchableOpacity 
-              activeOpacity={0.9} 
-              style={[styles.congratsBtn, { backgroundColor: themePrimaryColor }]} 
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={[styles.congratsBtn, { backgroundColor: themePrimaryColor }]}
               onPress={() => setShowCongratsModal(false)}
             >
               <Text style={styles.congratsBtnText}>Tuyệt vời!</Text>
@@ -617,9 +727,9 @@ export default function ResultScreen({
         </View>
       </Modal>
 
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={[
-          styles.scrollContainer, 
+          styles.scrollContainer,
           { backgroundColor: colors.background }
         ]}
         showsVerticalScrollIndicator={false}
@@ -653,19 +763,32 @@ export default function ResultScreen({
               />
             </View>
           )}
-          
+
           {showCelebration && showStreakCelebration && <StreakCelebration visible={showCelebration} streakCount={streakCount} />}
 
           {/* Minh họa trạng thái đạt hoặc thất bại */}
-          {passedThreshold ? (
+          {isBoss ? (
             <>
-              <View style={styles.trophyContainer}>
-                <View style={[styles.trophyInner, { backgroundColor: '#FFD02C' }]}>
-                  <Trophy size={64} color="#FFF" fill="#FFF" />
+              <BossResultAnim isVictory={passedThreshold} />
+              <Text style={[styles.statusTitle, { color: passedThreshold ? (isDark ? '#34D399' : '#3B7A66') : (isDark ? '#F87171' : '#EF4444') }]}>
+                {passedThreshold ? 'Chúc mừng! Bạn đã đánh bại Boss!' : 'Thất bại! Boss vẫn nhởn nhơ!'}
+              </Text>
+            </>
+          ) : passedThreshold ? (
+            <>
+              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', marginBottom: 20, height: 100, width: '100%' }}>
+                <View style={{ transform: [{ rotate: '-15deg' }, { translateX: 20 }, { translateY: -10 }] }}>
+                  <Star size={60} color={displayedScore >= 70 ? '#FBBF24' : (isDark ? '#374151' : '#E5E7EB')} fill={displayedScore >= 70 ? '#FBBF24' : (isDark ? '#374151' : '#E5E7EB')} />
+                </View>
+                <View style={{ zIndex: 2, transform: [{ translateY: -30 }] }}>
+                  <Star size={80} color={displayedScore >= 80 ? '#FBBF24' : (isDark ? '#374151' : '#E5E7EB')} fill={displayedScore >= 80 ? '#FBBF24' : (isDark ? '#374151' : '#E5E7EB')} />
+                </View>
+                <View style={{ transform: [{ rotate: '15deg' }, { translateX: -20 }, { translateY: -10 }] }}>
+                  <Star size={60} color={displayedScore >= 100 ? '#FBBF24' : (isDark ? '#374151' : '#E5E7EB')} fill={displayedScore >= 100 ? '#FBBF24' : (isDark ? '#374151' : '#E5E7EB')} />
                 </View>
               </View>
               <Text style={[styles.statusTitle, { color: isDark ? '#34D399' : '#3B7A66' }]}>
-                {isBoss ? 'Chinh phục thành công!' : 'Vượt chặng xuất sắc!'}
+                Vượt chặng xuất sắc!
               </Text>
             </>
           ) : (
@@ -690,9 +813,9 @@ export default function ResultScreen({
           {/* Khối cụm nút bấm hành động */}
           <View style={styles.actionButtonGroup}>
             {(failedAnswers.length > 0 || isMatchMode) && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={handleShowFailed} 
+                onPress={handleShowFailed}
                 style={[styles.secondaryButton, { backgroundColor: colors.card, borderColor: isDark ? '#1E293B' : '#F1F5F9' }]}
               >
                 <Eye size={16} color={themePrimaryColor} />
@@ -732,7 +855,7 @@ export default function ResultScreen({
                 onPress={onContinue}
                 disabled={!canContinue}
                 style={[
-                  styles.mainActionButton, 
+                  styles.mainActionButton,
                   { backgroundColor: canContinue ? themePrimaryColor : (isDark ? '#334155' : '#F1F5F9') },
                 ]}
               >
@@ -747,7 +870,7 @@ export default function ResultScreen({
               <View style={[styles.lockWarningRow, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2' }]}>
                 <AlertCircle size={14} color={isDark ? '#F87171' : '#EF4444'} />
                 <Text style={[styles.lockWarningText, { color: isDark ? '#F87171' : '#B91C1C' }]}>
-                  Đạt tối thiểu 80% điểm số để mở khóa bài tiếp theo.
+                  Đạt tối thiểu 70% điểm số để mở khóa bài tiếp theo.
                 </Text>
               </View>
             )}

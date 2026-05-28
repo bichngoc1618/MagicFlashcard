@@ -53,6 +53,7 @@ type QuizQuestion = {
   pool?: QuizWord[];
   options?: string[];
   correctAnswer?: string;
+  promptType?: string;
 };
 
 type UseQuizScreenParams = {
@@ -104,6 +105,8 @@ type UseQuizScreenResult = {
   completedQuiz: boolean;
   currentWord: QuizWord | null;
   activeType: QuizType | undefined;
+  promptType: string | undefined;
+  correctAnswer: string | undefined;
   stepProgress: number;
   questionIndex: number;
   totalCount: number;
@@ -146,6 +149,7 @@ type UseQuizScreenResult = {
   setShowWrongPairsReview: (show: boolean) => void;
   proceedAfterReview: () => void;
   showMatchAnswers: () => void;
+  isReviewComplete: boolean;
 };
 
 const PRACTICE_STEPS: QuizType[] = ['MATCH_HIRA', 'MATCH_MEANING', 'MULTIPLE_CHOICE', 'SCRAMBLED_HIRA', 'WRITE_HIRA'];
@@ -156,7 +160,10 @@ function getTimerForType(type: QuizType): number {
     case 'MATCH_MEANING':
       return 20;
     case 'MULTIPLE_CHOICE':
+    case 'LISTENING':
       return 8;
+    case 'TRUE_FALSE':
+      return 4;
     case 'SCRAMBLED_HIRA':
       return 20;
     case 'WRITE_HIRA':
@@ -233,14 +240,92 @@ function buildQuizQuestions(words: QuizWord[], quizStepType: QuizType, batchInde
       batchIndex,
     };
 
-    if (quizStepType === 'MULTIPLE_CHOICE') {
+    if (quizStepType === 'MULTIPLE_CHOICE' || quizStepType === 'LISTENING') {
       question.options = buildMultipleChoiceOptions(word, words);
       question.correctAnswer = word.meaning;
+    }
+
+    if (quizStepType === 'TRUE_FALSE') {
+      const allMeanings = words.filter(w => w.id !== word.id).map(w => w.meaning);
+      const shouldShowCorrect = Math.random() > 0.5;
+      const displayMeaning = shouldShowCorrect
+        ? word.meaning
+        : (allMeanings[Math.floor(Math.random() * allMeanings.length)] ?? word.meaning);
+      question.options = [displayMeaning];
+      question.correctAnswer = displayMeaning === word.meaning ? 'TRUE' : 'FALSE';
     }
 
     return question;
   });
 }
+
+/**
+ * PRACTICE_2: Chế độ luyện tập đa dạng (Ngũ giác quan)
+ * Mỗi từ được hỏi bằng 1 dạng bài random trong danh sách:
+ * LISTENING, MULTIPLE_CHOICE (kanji→nghĩa), TRUE_FALSE, SCRAMBLED_HIRA
+ * Kèm thêm 1 câu MEMORY_CARD cuối session (nếu có đủ từ).
+ */
+function buildMixedPracticeQuestions(words: QuizWord[], batchIndex: number): QuizQuestion[] {
+  if (words.length === 0) return [];
+
+  const mixTypes: QuizType[] = ['MULTIPLE_CHOICE', 'LISTENING', 'TRUE_FALSE'];
+  const questions: QuizQuestion[] = [];
+
+  words.forEach((word, i) => {
+    // Spread đều các dạng bài theo index, sau đó shuffle để không bị đoán trước
+    const type = mixTypes[i % mixTypes.length];
+    const question: QuizQuestion = { word, type, batchIndex };
+
+    if (type === 'MULTIPLE_CHOICE' || type === 'LISTENING') {
+      question.options = buildMultipleChoiceOptions(word, words);
+      question.correctAnswer = word.meaning;
+      // promptType phân biệt hiển thị kanji hay hiragana làm dạng gợi
+      question.promptType = type === 'LISTENING' ? 'hira_to_meaning' : 'kanji_to_meaning';
+    }
+
+    if (type === 'TRUE_FALSE') {
+      const allMeanings = words.filter(w => w.id !== word.id).map(w => w.meaning);
+      const shouldShowCorrect = Math.random() > 0.5;
+      const displayMeaning = shouldShowCorrect
+        ? word.meaning
+        : (allMeanings[Math.floor(Math.random() * allMeanings.length)] ?? word.meaning);
+      question.options = [displayMeaning];
+      question.correctAnswer = displayMeaning === word.meaning ? 'TRUE' : 'FALSE';
+    }
+
+    questions.push(question);
+  });
+
+  // Thêm 1 MEMORY_CARD ở cuối nếu số lượng từ ≥ 2
+  if (words.length >= 2) {
+    questions.push({
+      word: words[0], // word placeholder (MEMORY_CARD dùng toàn bộ currentMatchWords)
+      type: 'MEMORY_CARD',
+      batchIndex,
+      pool: shuffle(words),
+    });
+  }
+
+  return shuffle(questions);
+}
+
+/**
+ * PRACTICE_3: Ghép chữ & Gõ chữ (mix SCRAMBLED_HIRA & WRITE_HIRA)
+ */
+function buildPractice3Questions(words: QuizWord[], batchIndex: number): QuizQuestion[] {
+  if (words.length === 0) return [];
+
+  const mixTypes: QuizType[] = ['SCRAMBLED_HIRA', 'WRITE_HIRA'];
+  const questions: QuizQuestion[] = [];
+
+  words.forEach((word, i) => {
+    const type = mixTypes[i % mixTypes.length];
+    questions.push({ word, type, batchIndex });
+  });
+
+  return shuffle(questions);
+}
+
 
 export default function useQuizScreen({
   materialId,
@@ -269,6 +354,7 @@ export default function useQuizScreen({
   const [answers, setAnswers] = useState<AnswerRecord[]>([]);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [showResult, setShowResult] = useState(false);
+  const [isReviewComplete, setIsReviewComplete] = useState(false);
   const [selectedLeftId, setSelectedLeftId] = useState<string | null>(null);
   const [selectedRightId, setSelectedRightId] = useState<string | null>(null);
   const [matchedIds, setMatchedIds] = useState<Set<string>>(new Set());
@@ -378,11 +464,47 @@ export default function useQuizScreen({
   const effectiveQuizType: QuizType = quizStepType || PRACTICE_STEPS[currentStep] || 'MULTIPLE_CHOICE';
 
   const questions = useMemo(() => {
-    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'REVIEW') {
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
       return buildFinalBossQuestions(batchWords, nodeType);
+    }
+    // PRACTICE_2: Chế độ luyện tập đa dạng - random mix nhiều loại câu hỏi
+    if (nodeType === 'PRACTICE_2') {
+      return buildMixedPracticeQuestions(batchWords, batchIndex);
+    }
+    // PRACTICE_3: Ghép chữ & Gõ chữ mixed mode
+    if (nodeType === 'PRACTICE_3') {
+      return buildPractice3Questions(batchWords, batchIndex);
+    }
+    if (nodeType === 'REVIEW' || nodeType === 'SRS_REVIEW') {
+      const targetCount = Math.max(4, Math.min(25, batchWords.length * 2));
+      const qList: QuizQuestion[] = [];
+      const types: QuizType[] = ['MULTIPLE_CHOICE', 'TRUE_FALSE', 'WRITE_HIRA'];
+
+      while (qList.length < targetCount && batchWords.length > 0) {
+        for (const word of batchWords) {
+          if (qList.length >= targetCount) break;
+          const type = types[Math.floor(Math.random() * types.length)];
+          const question: QuizQuestion = { word, type, batchIndex: 0 };
+          if (type === 'MULTIPLE_CHOICE') {
+            question.options = buildMultipleChoiceOptions(word, batchWords);
+            question.correctAnswer = word.meaning;
+          } else if (type === 'TRUE_FALSE') {
+            const allMeanings = batchWords.filter(w => w.id !== word.id).map(w => w.meaning);
+            const shouldShowCorrect = Math.random() > 0.5;
+            const displayMeaning = shouldShowCorrect
+              ? word.meaning
+              : (allMeanings[Math.floor(Math.random() * allMeanings.length)] ?? word.meaning);
+            question.options = [displayMeaning];
+            question.correctAnswer = displayMeaning === word.meaning ? 'TRUE' : 'FALSE';
+          }
+          qList.push(question);
+        }
+      }
+      return shuffle(qList);
     }
     return buildQuizQuestions(batchWords, effectiveQuizType, batchIndex);
   }, [batchWords, effectiveQuizType, batchIndex, nodeType]);
+
 
   // Debug: Log the number of generated questions and the effective quiz type
   // console.log('[useQuizScreen] effectiveQuizType:', effectiveQuizType, 'questions count:', questions?.length);
@@ -410,11 +532,12 @@ export default function useQuizScreen({
     setHasSubmitted(false);
     setSelectedAnswer(null);
     // Reset timer for the new question but preserve auto‑next countdown handling
-    setTimerSeconds(getTimerForType(effectiveQuizType));
+    const currentQuestionType = questions[currentIndex]?.type || effectiveQuizType;
+    setTimerSeconds(getTimerForType(currentQuestionType));
     setFeedbackMessage(null);
     setIsSubmitting(false);
     setShowWrongPairsReview(false);
-  }, [currentIndex, questions.length, clearTimer, effectiveQuizType, clearAutoNextTimer]);
+  }, [currentIndex, questions, clearTimer, effectiveQuizType, clearAutoNextTimer]);
 
   // CRITICAL FIX 2: Loại bỏ hàm completeQuiz chứa lệnh rẽ nhánh tự hủy goBack ngầm.
   // Tiến trình chuyển trang ra Map bây giờ sẽ do file cha QuizScreen điều phối 100%.
@@ -476,11 +599,15 @@ export default function useQuizScreen({
   const handleNextQuestion = useCallback(() => {
     const totalCount = questions.length;
     if (currentIndex + 1 >= totalCount) {
-      setShowResult(true);
+      if (nodeType === 'REVIEW' || nodeType === 'SRS_REVIEW') {
+        setIsReviewComplete(true);
+      } else {
+        setShowResult(true);
+      }
       return;
     }
     setCurrentIndex((prev) => prev + 1);
-  }, [currentIndex, questions.length]);
+  }, [currentIndex, questions.length, nodeType]);
 
   const reloadQuiz = useCallback(() => {
     setReloadToggle((prev) => !prev);
@@ -527,8 +654,16 @@ export default function useQuizScreen({
   );
 
   const matchWords = useMemo<QuizWord[]>(() => {
-    if (!currentQuestion || (activeType !== 'MATCH_MEANING' && activeType !== 'MATCH_HIRA')) return [];
-    return currentQuestion.pool ? currentQuestion.pool : shuffle(batchWords);
+    if (!currentQuestion) return [];
+    // MATCH types dùng pool từ question
+    if (activeType === 'MATCH_MEANING' || activeType === 'MATCH_HIRA') {
+      return currentQuestion.pool ? currentQuestion.pool : shuffle(batchWords);
+    }
+    // MEMORY_CARD trong PRACTICE_2: dùng pool hoặc toàn bộ batchWords
+    if (activeType === 'MEMORY_CARD') {
+      return currentQuestion.pool ? currentQuestion.pool : shuffle(batchWords);
+    }
+    return [];
   }, [currentQuestion, batchWords, activeType]);
 
   const matchRoundCount = matchWords.length < 7 ? 1 : 2;
@@ -742,6 +877,7 @@ export default function useQuizScreen({
     [activeType, currentMatchWords, isMatchComplete, pairAssignments, handleCheckAnswer, matchRound, matchRoundCount, matchAttempts, deductHeartOnFailure, showAlert, hasSubmitted],
   );
 
+
   const handleTimerExpire = useCallback(async () => {
     if (!isTimerRunning || hasSubmitted) return;
 
@@ -910,10 +1046,6 @@ export default function useQuizScreen({
     });
   }, [currentStep, resetMatchStateForQuestion]);
 
-  const multipleChoiceOptions = useMemo(() => {
-    if (!currentQuestion || currentQuestion.type !== 'MULTIPLE_CHOICE') return [];
-    return currentQuestion.options ?? buildMultipleChoiceOptions(currentWord!, batchWords);
-  }, [currentQuestion, currentWord, batchWords]);
 
   const matchScore = matchRoundScore;
   const displayScore = isMatchMode ? matchScore : stepScore;
@@ -938,9 +1070,11 @@ export default function useQuizScreen({
   }, [currentWord, selectedScrambledChars, handleCheckAnswer]);
 
   const handleChoiceAnswer = useCallback(() => {
-    if (!currentQuestion?.correctAnswer) return;
-    handleCheckAnswer(selectedOption === currentQuestion.correctAnswer, selectedOption);
-  }, [currentQuestion, selectedOption, handleCheckAnswer]);
+    if (!currentQuestion) return;
+    // Sử dụng correctAnswer nếu có, ngược lại fallback về meaning của từ hiện tại
+    const correct = currentQuestion.correctAnswer ?? currentWord?.meaning ?? '';
+    handleCheckAnswer(selectedOption === correct, selectedOption);
+  }, [currentQuestion, currentWord, selectedOption, handleCheckAnswer]);
 
   const handlePairSelection = useCallback(
     (leftId: string, rightId: string) => {
@@ -1028,6 +1162,16 @@ export default function useQuizScreen({
     }
   }, [quizStepType, currentStep, answers, questions.length, stepScore, user?.id, materialId, currentNodeIndex, sessionId, isMatchMode, matchScore]);
 
+  const multipleChoiceOptions = useMemo(() => {
+    if (!currentQuestion) return [];
+    // Áp dụng cho tất cả các loại quiz dùng lựa chọn đáp án
+    const choiceTypes: QuizType[] = ['MULTIPLE_CHOICE', 'LISTENING', 'TRUE_FALSE'];
+    if (!choiceTypes.includes(currentQuestion.type as QuizType)) return [];
+    if (currentQuestion.options) return currentQuestion.options;
+    if (!currentWord) return [];
+    return buildMultipleChoiceOptions(currentWord, batchWords);
+  }, [currentQuestion, currentWord, batchWords]);
+
   return {
     isLoading,
     loadError,
@@ -1062,6 +1206,8 @@ export default function useQuizScreen({
     completedQuiz: showResult,
     currentWord,
     activeType,
+    promptType: currentQuestion?.promptType,
+    correctAnswer: currentQuestion?.correctAnswer,
     stepProgress,
     questionIndex,
     totalCount,
@@ -1104,5 +1250,6 @@ export default function useQuizScreen({
     setShowWrongPairsReview,
     proceedAfterReview,
     showMatchAnswers,
+    isReviewComplete,
   };
 }

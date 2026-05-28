@@ -49,7 +49,7 @@ export const login = async (req, res) => {
     }
 
     const [rows] = await db.query(
-      'SELECT id, username, password_hash, total_xp, streak_count, last_study_date, last_node_completed_date, global_hearts, avatar_id FROM users WHERE email = ?',
+      'SELECT id, username, password_hash, total_xp, streak_count, last_study_date, last_heart_refill_date, last_node_completed_date, global_hearts, avatar_id FROM users WHERE email = ?',
       [email]
     );
     const user = rows[0];
@@ -68,22 +68,22 @@ export const login = async (req, res) => {
     };
 
     const todayVnStr = getVietnamDateString(new Date());
-    const lastStudyVnStr = user.last_study_date ? getVietnamDateString(user.last_study_date) : null;
+    const lastRefillVnStr = user.last_heart_refill_date ? getVietnamDateString(user.last_heart_refill_date) : null;
 
     let shouldResetHearts = 0;
-    if (lastStudyVnStr && lastStudyVnStr < todayVnStr) {
+    if (lastRefillVnStr !== todayVnStr) {
       shouldResetHearts = 1;
     }
 
     let finalHearts = user.global_hearts;
     let needsUpdate = false;
 
-    // Daily Heart Reset: Only if the stored study date is from a previous day.
+    // Daily Heart Reset: Only if the last refill date is from a previous day.
     if (shouldResetHearts === 1 && finalHearts < 5) {
       finalHearts = 5;
       needsUpdate = true;
-    } else if (user.last_study_date === null) {
-      // First login or no study date yet: preserve DB hearts and only initialize when missing or < 5.
+    } else if (user.last_heart_refill_date === null) {
+      // First login or no refill date yet: preserve DB hearts and only initialize when missing or < 5.
       if (finalHearts === null || finalHearts === undefined || finalHearts < 5) {
         finalHearts = 5;
         needsUpdate = true;
@@ -91,7 +91,7 @@ export const login = async (req, res) => {
     }
 
     if (needsUpdate) {
-      await db.query('UPDATE users SET global_hearts = ? WHERE id = ?', [finalHearts, user.id]);
+      await db.query('UPDATE users SET global_hearts = ?, last_heart_refill_date = ? WHERE id = ?', [finalHearts, todayVnStr, user.id]);
     }
 
     // Check last node completion date on login and decrement streak if days have passed
@@ -194,10 +194,18 @@ export const refillHearts = async (req, res) => {
     
     const newHearts = Math.min(Number(rows[0].global_hearts) + Number(hearts), 5);
     
-    await db.query(
-      'UPDATE users SET total_xp = total_xp - ?, global_hearts = ? WHERE id = ?',
-      [cost, newHearts, userId]
-    );
+    if (cost === 0) {
+      const todayVnStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+      await db.query(
+        'UPDATE users SET global_hearts = ?, last_heart_refill_date = ? WHERE id = ?',
+        [newHearts, todayVnStr, userId]
+      );
+    } else {
+      await db.query(
+        'UPDATE users SET total_xp = total_xp - ?, global_hearts = ? WHERE id = ?',
+        [cost, newHearts, userId]
+      );
+    }
     console.log('⚡ [API] Refilled hearts successfully. New count:', newHearts);
 
     return res.json({ success: true, globalHearts: newHearts });

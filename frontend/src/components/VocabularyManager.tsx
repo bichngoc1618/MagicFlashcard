@@ -91,6 +91,7 @@ export default function VocabularyManager({
   const [isOpen, setIsOpen] = useState(false);
   const [editorVisible, setEditorVisible] = useState(false);
   const [selectedCard, setSelectedCard] = useState<FlashcardData | null>(null);
+  const [wasSheetOpenBeforeEdit, setWasSheetOpenBeforeEdit] = useState(false);
 
   const [toast, setToast] = useState('');
 
@@ -123,10 +124,18 @@ export default function VocabularyManager({
     return () => clearTimeout(t);
   }, [toast]);
 
-  const showToast = (msg: string) => setToast(msg);
+  const showToast = useCallback((msg: string) => setToast(msg), []);
 
   /* ================= SHEET ================= */
-  const toggleSheet = () => {
+  const closeSheet = useCallback(() => {
+    Animated.timing(slideAnim, {
+      toValue: 400,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => setIsOpen(false));
+  }, [slideAnim]);
+
+  const toggleSheet = useCallback(() => {
     if (isOpen) {
       closeSheet();
     } else {
@@ -136,45 +145,43 @@ export default function VocabularyManager({
         useNativeDriver: true,
       }).start();
     }
-  };
-
-  const closeSheet = () => {
-    Animated.timing(slideAnim, {
-      toValue: 400,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => setIsOpen(false));
-  };
+  }, [isOpen, closeSheet, slideAnim]);
 
   /* ================= EDITOR ================= */
-  const openEditor = (card?: FlashcardData) => {
+  const openEditor = useCallback((card?: FlashcardData) => {
     const doOpen = () => {
       setSelectedCard(card ?? null);
       setEditorVisible(true);
     };
 
     if (isOpen) {
+      setWasSheetOpenBeforeEdit(true);
       closeSheet();
       setTimeout(doOpen, 260);
     } else {
+      setWasSheetOpenBeforeEdit(false);
       doOpen();
     }
-  };
+  }, [isOpen, closeSheet]);
 
-  const closeEditor = () => {
+  const closeEditor = useCallback(() => {
     setSelectedCard(null);
     setEditorVisible(false);
-  };
+    
+    if (wasSheetOpenBeforeEdit) {
+      setTimeout(() => {
+        setIsOpen(true);
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+      }, 100);
+      setWasSheetOpenBeforeEdit(false);
+    }
+  }, [wasSheetOpenBeforeEdit, slideAnim]);
 
   /* ================= DELETE ================= */
-  const handleDeleteCard = (id: number) => {
-    showAlert('Xóa từ vựng', 'Bạn chắc chắn muốn xóa từ vựng này?', [
-      { text: 'Hủy', style: 'cancel' },
-      { text: 'Xóa', style: 'destructive', onPress: () => performDeleteCard(id) },
-    ], 'warning');
-  };
-
-  const performDeleteCard = async (id: number) => {
+  const performDeleteCard = useCallback(async (id: number) => {
     showLoader('Đang xóa từ vựng...');
     try {
       await deleteFlashcard(id);
@@ -185,18 +192,24 @@ export default function VocabularyManager({
     } finally {
       hideLoader();
     }
-  };
+  }, [showLoader, hideLoader, showAlert, showToast]);
+
+  const handleDeleteCard = useCallback((id: number) => {
+    Alert.alert('Xóa từ vựng', 'Bạn chắc chắn muốn xóa từ vựng này?', [
+      { text: 'Hủy', style: 'cancel' },
+      { text: 'Xóa', style: 'destructive', onPress: () => performDeleteCard(id) },
+    ]);
+  }, [performDeleteCard]);
 
   const handleDeleteMaterial = () => {
     setDropdownVisible(false);
-    showAlert(
+    Alert.alert(
       'Xác nhận xóa',
       `Bạn có chắc chắn muốn xóa bộ thẻ "${materialTitle || 'này'}" không? Mọi dữ liệu liên quan sẽ bị xóa vĩnh viễn.`,
       [
         { text: 'Hủy', style: 'cancel' },
         { text: 'Xóa', style: 'destructive', onPress: performDeleteMaterial }
-      ],
-      'warning'
+      ]
     );
   };
 
@@ -223,16 +236,17 @@ export default function VocabularyManager({
     try {
       if (selectedCard) {
         await updateFlashcard(selectedCard.id, payload);
-        showToast('Đã cập nhật');
+        showToast('Đã cập nhật từ vựng thành công');
       } else {
         await createFlashcard(materialId, payload);
-        showToast('Đã thêm');
+        showToast('Đã thêm từ vựng thành công');
       }
 
       await refreshCards();
-      closeEditor();
+      // AddVocabularyModal's closeModal will trigger closeEditor()
     } catch (e) {
-      showAlert('Lỗi', 'Không lưu được', undefined, 'error');
+      Alert.alert('Lỗi', 'Không lưu được');
+      throw e;
     } finally {
       hideLoader();
     }
@@ -279,9 +293,10 @@ export default function VocabularyManager({
     try {
       await bulkCreateFlashcards(materialId, payloads);
       await refreshCards();
-      showToast(`Đã thêm ${payloads.length} từ`);
+      showToast(`Đã thêm ${payloads.length} từ thành công`);
     } catch (e) {
-      showAlert('Lỗi', 'Không import được', undefined, 'error');
+      Alert.alert('Lỗi', 'Không import được');
+      throw e;
     } finally {
       hideLoader();
     }
@@ -352,6 +367,14 @@ export default function VocabularyManager({
   };
 
   const items = useMemo(() => cards, [cards]);
+
+  const renderItem = useCallback(({ item }: { item: FlashcardData }) => (
+    <VocabularyItem
+      card={item}
+      onEdit={openEditor}
+      onDelete={handleDeleteCard}
+    />
+  ), [openEditor, handleDeleteCard]);
 
   /* ================= UI STYLES ================= */
   const dynamicStyles = StyleSheet.create({
@@ -428,21 +451,21 @@ export default function VocabularyManager({
       position: 'absolute',
       bottom: 50,                    // Đẩy cao tránh đè thanh điều hướng đáy
       alignSelf: 'center',           // Tự động thu gọn theo text và căn giữa
-      backgroundColor: 'rgba(28, 28, 33, 0.95)', // Màu tối mờ huyền bí
-      paddingVertical: 10,
-      paddingHorizontal: 22,
+      backgroundColor: colors.primary, // Đổi sang màu chủ đạo để dễ nhìn hơn
+      paddingVertical: 12,
+      paddingHorizontal: 24,
       borderRadius: 100,             // Bo tròn tuyệt đối
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.15,
-      shadowRadius: 6,
-      elevation: 5,
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+      elevation: 6,
       zIndex: 9999,
     },
     toastText: {
       color: '#FFFFFF',
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: 14,
+      fontWeight: '700',
       letterSpacing: 0.2,
     },
     fab: {
@@ -751,21 +774,23 @@ export default function VocabularyManager({
                 <FlatList
                   data={items}
                   keyExtractor={(item) => item.id.toString()}
-                  renderItem={({ item }) => (
-                    <VocabularyItem
-                      card={item}
-                      onEdit={() => openEditor(item)}
-                      onDelete={() => handleDeleteCard(item.id)}
-                    />
-                  )}
-                  initialNumToRender={12}
+                  renderItem={renderItem}
+                  initialNumToRender={10}
                   maxToRenderPerBatch={10}
-                  windowSize={5}
+                  windowSize={10}
+                  removeClippedSubviews={true}
+                  updateCellsBatchingPeriod={50}
                   contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 80, paddingTop: 4 }}
                   showsVerticalScrollIndicator={false}
                 />
               )}
             </View>
+            {/* TOAST BÊN TRONG SHEET MODAL */}
+            {toast ? (
+              <View style={dynamicStyles.toast}>
+                <Text style={dynamicStyles.toastText}>{toast}</Text>
+              </View>
+            ) : null}
           </Animated.View>
         </View>
       </Modal>
@@ -782,7 +807,7 @@ export default function VocabularyManager({
       />
 
       {/* TOAST GỌN GÀNG TỰ TẮT SAU 2S */}
-      {toast ? (
+      {toast && !isOpen ? (
         <View style={dynamicStyles.toast}>
           <Text style={dynamicStyles.toastText}>{toast}</Text>
         </View>

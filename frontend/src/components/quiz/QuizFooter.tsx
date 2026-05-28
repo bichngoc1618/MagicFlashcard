@@ -45,6 +45,7 @@ type QuizFooterProps = {
   onSelectOption: (option: string | null) => void;
   onResetChosenTileIds: () => void;
   onShowMatchAnswers?: () => void;
+  isBoss?: boolean;
 };
 
 export default function QuizFooter({
@@ -81,6 +82,7 @@ export default function QuizFooter({
   onSelectOption,
   onResetChosenTileIds,
   onShowMatchAnswers,
+  isBoss = false,
 }: QuizFooterProps) {
   const [countdown, setCountdown] = useState<number | null>(null);
   const { colors, theme } = useTheme();
@@ -156,6 +158,8 @@ export default function QuizFooter({
         return selectedScrambledChars.join('').trim().length > 0;
 
       case 'MULTIPLE_CHOICE':
+      case 'LISTENING':
+      case 'TRUE_FALSE':
         return selectedOption !== null;
 
       default:
@@ -188,6 +192,8 @@ export default function QuizFooter({
         onVerifyScrambled();
         break;
       case 'MULTIPLE_CHOICE':
+      case 'LISTENING':
+      case 'TRUE_FALSE':
         onHandleChoiceAnswer();
         break;
       default:
@@ -206,7 +212,7 @@ export default function QuizFooter({
     onResetChosenTileIds();
   };
 
-  const shouldShowCheckButton = isMatchMode || (stepMode !== 'MATCH_MEANING' && stepMode !== 'MATCH_HIRA');
+  const shouldShowCheckButton = isMatchMode || (stepMode !== 'MATCH_MEANING' && stepMode !== 'MATCH_HIRA' && stepMode !== 'MEMORY_CARD');
 
   // Khởi tạo các biến màu sắc tố đậm đồng bộ Home
   const themePrimaryColor = isDark ? '#2A5C4D' : '#3B7A66';
@@ -221,7 +227,7 @@ export default function QuizFooter({
   const dangerShadow = isDark ? '#5A1414' : '#FCA5A5';
 
   return (
-    <View style={[styles.footer, { backgroundColor: colors.card, borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
+    <View style={[styles.footer, { backgroundColor: isBoss ? 'transparent' : colors.card, borderTopColor: isBoss ? 'transparent' : (isDark ? '#1E293B' : '#F1F5F9') }]}>
       
       {/* KHU VỰC CHƯA BẤM KIỂM TRA (TRẠNG THÁI MẶC ĐỊNH) */}
       {isCorrect === null ? (
@@ -351,6 +357,8 @@ export default function QuizFooter({
                     ? currentWord.hiragana
                     : ['MATCH_HIRA', 'MATCH_MEANING'].includes(stepMode)
                     ? 'Xem đáp án trong bảng ghép phía trên.'
+                    : stepMode === 'MEMORY_CARD'
+                    ? 'Xem đáp án trên các thẻ đã được lật.'
                     : currentWord.meaning}
                 </Text>
               )}
@@ -380,9 +388,9 @@ export default function QuizFooter({
                     ? isLastMatchRound
                       ? 'Câu tiếp theo'
                       : 'Đợt tiếp theo'
-                    : questionIndex + 1 >= totalQuestionCount
-                    ? 'Xem kết quả'
-                    : 'Tiếp tục'}
+                    : (isBoss || questionIndex + 1 < totalQuestionCount)
+                    ? 'Tiếp tục'
+                    : 'Xem kết quả'}
                 </Text>
                 <ArrowRight size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
               </View>

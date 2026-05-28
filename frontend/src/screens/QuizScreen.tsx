@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, LayoutAnimation, Modal, View, Text, TouchableOpacity, Image, StyleSheet, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import * as Speech from 'expo-speech';
 import { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../components/AppNavigator';
 import QuizLoadingState from '../components/quiz/QuizLoadingState';
@@ -12,7 +13,7 @@ import type { QuizType } from '../components/quiz/types';
 import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useGlobalUI } from '../context/GlobalUIContext';
-import { completeQuizSession, syncStudy, completeSrsReview } from '../api/api';
+import { completeQuizSession, syncStudy, completeSrsReview, saveNodeStars } from '../api/api';
 import DuoHearts from '../components/quiz/DuoHearts';
 import useQuizScreen from './useQuizScreen';
 
@@ -76,7 +77,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   // Kiểm soát hiển thị Modal Hết Tim và Block điều hướng tự động
   const [heartDeductionPending, setHeartDeductionPending] = React.useState(false);
   const [isOutOfHearts, setIsOutOfHearts] = React.useState(false);
-  const [navigationBlocked, setNavigationBlocked] = React.useState(false);
+  const navigationBlockedRef = React.useRef(false);
 
   // CRITICAL SHIELD STATE: Ép màn hình hiển thị Kết quả ở tầng giao diện cao nhất
   const [localShowResult, setLocalShowResult] = React.useState(false);
@@ -124,6 +125,8 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     reloadQuiz,
     currentWord,
     activeType,
+    promptType,
+    correctAnswer,
     stepProgress,
     questionIndex,
     totalCount,
@@ -164,6 +167,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     showWrongPairsReview,
     proceedAfterReview,
     showMatchAnswers,
+    isReviewComplete,
   } = useQuizScreen({
     materialId,
     nodeId,
@@ -190,17 +194,151 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     }
   }, [showResult]);
 
+  useEffect(() => {
+    if (isReviewComplete) {
+      showAlert(
+        'Hoàn thành',
+        `Bạn đã ôn tập xong các thẻ bài!`,
+        [
+          {
+            text: 'OK',
+            onPress: async () => {
+              if (user?.id) {
+                // Ensure study progress is logged even if Result screen isn't shown
+                await syncStudy({ userId: Number(user.id), materialId, sessionId: sessionId ?? '', currentNodeIndex, nodeCompleted: true }).catch(console.warn);
+                
+                if (nodeType === 'SRS_REVIEW' || nodeType === 'REVIEW') {
+                  const results = answers.map(a => ({
+                    cardId: Number(a.wordId),
+                    score: a.isCorrect ? 100 : 0
+                  }));
+                  await completeSrsReview({
+                    userId: Number(user.id),
+                    materialId,
+                    results,
+                  }).catch(console.warn);
+                }
+              }
+              navigation.navigate('MainTabs', { screen: 'Home' });
+            }
+          }
+        ],
+        'success'
+      );
+    }
+  }, [isReviewComplete, navigation, user?.id, materialId, sessionId, currentNodeIndex, nodeType, answers, showAlert]);
+
+  // BOSS BATTLE EARLY EXIT AND ENERGY MECHANIC
+  const bossWrongCount = answers.filter(a => !a.isCorrect).length;
+  const tugOfWarX = totalCount > 0 ? (50 / totalCount) : 0;
+  const energyPosition = isBoss ? Math.max(0, Math.min(100, 50 + (correctCount * tugOfWarX) - (bossWrongCount * 3 * tugOfWarX))) : 50;
+
+  const executeBossExitWrapperRef = React.useRef<((result: 'win'|'lose') => void) | null>(null);
+  const bossExitExecutedRef = React.useRef(false);
+
+  const executeBossExit = React.useCallback(async (bossResult: 'win' | 'lose') => {
+    if (bossExitExecutedRef.current) return;
+    bossExitExecutedRef.current = true;
+    navigationBlockedRef.current = true;
+    
+    try {
+      Speech.stop();
+    } catch (e) {
+      // Ignore speech stop error
+    }
+
+    try {
+      if (bossResult === 'win') {
+        if (!sessionLogged && user?.id) {
+          setSessionLogged(true);
+          try {
+            if (sessionId) {
+              await syncStudy({ userId: Number(user.id), materialId, sessionId, currentNodeIndex, nodeCompleted: true });
+            }
+            await completeQuizSession({
+              userId: Number(user.id),
+              materialId,
+              sessionType: String(nodeId),
+              batchIndex,
+              totalQuestions: resultTotalCount,
+              correctAnswers: resultCorrectCount,
+              isAlreadyCompleted,
+            });
+
+            if (nodeId) {
+              await saveNodeStars({ userId: Number(user.id), materialId: Number(materialId), nodeId: String(nodeId), stars: 3 });
+            }
+            if (!isAlreadyCompleted) {
+              await authContext.updateXpAndStreakInDB(100);
+            }
+            if (!streakUpdated) {
+              await checkAndTriggerDailyStreak(Number(user.id));
+              setStreakUpdated(true);
+            }
+            await refreshUserStats();
+          } catch (e) {
+             console.warn('Lỗi ghi log Boss session:', e);
+          }
+        }
+      } else {
+        // Lose logic: deduct heart
+        if (!heartDeducted && !heartDeductionPending) {
+          setHeartDeductionPending(true);
+          try {
+             await deductHeartOnFailure();
+             setHeartDeducted(true);
+          } catch (err) {
+             console.warn('Lỗi trừ tim khi thua Boss:', err);
+          } finally {
+             setHeartDeductionPending(false);
+          }
+        }
+      }
+    } finally {
+      const params: any = { materialId, bossResult };
+      if (typeof currentNodeIndex !== 'undefined') params.completedNodeIndex = currentNodeIndex;
+      if (sessionId) params.sessionId = Number(sessionId);
+      navigation.navigate('MainTabs' as any, { screen: 'StudyJourney', params });
+    }
+  }, [user?.id, sessionLogged, sessionId, materialId, currentNodeIndex, nodeId, batchIndex, resultTotalCount, resultCorrectCount, isAlreadyCompleted, authContext, streakUpdated, checkAndTriggerDailyStreak, refreshUserStats, heartDeducted, heartDeductionPending, deductHeartOnFailure, navigation]);
+
+  React.useEffect(() => {
+    executeBossExitWrapperRef.current = executeBossExit;
+  }, [executeBossExit]);
+
+  const finalCanContinue = isBoss ? (energyPosition >= 100) : canContinue;
+
+  useEffect(() => {
+    if (!isBoss) return;
+    
+    let timer: NodeJS.Timeout;
+    if (energyPosition >= 100) {
+      timer = setTimeout(() => {
+        if (executeBossExitWrapperRef.current) executeBossExitWrapperRef.current('win');
+      }, 800);
+    } else if (energyPosition <= 0 || localHearts <= 0) {
+      timer = setTimeout(() => {
+        if (executeBossExitWrapperRef.current) executeBossExitWrapperRef.current('lose');
+      }, 800);
+    }
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isBoss, energyPosition, localHearts]);
+
+
   // Bộ lắng nghe chặn thao tác vuốt cạnh/bấm nút Back vật lý khi đang làm bài
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      if (navigationBlocked) {
+      if (navigationBlockedRef.current) {
         return;
       }
 
       e.preventDefault();
 
       if (localShowResult) {
-        setNavigationBlocked(true);
+        navigationBlockedRef.current = true;
         executeExitWrapperRef.current();
       } else {
         showAlert(
@@ -212,7 +350,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
               text: 'Thoát', 
               style: 'destructive',
               onPress: () => {
-                setNavigationBlocked(true);
+                navigationBlockedRef.current = true;
                 // Trừ 1 tim khi thoát bài quiz giữa chừng
                 if (authContext?.deductHeartOnFailure) {
                   authContext.deductHeartOnFailure();
@@ -226,11 +364,11 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
       }
     });
     return unsubscribe;
-  }, [navigation, localShowResult, navigationBlocked]);
+  }, [navigation, localShowResult]);
 
   // Ghi nhận dữ liệu Session kết quả lên Server
   React.useEffect(() => {
-    if (localShowResult && canContinue && !sessionLogged && user?.id) {
+    if (localShowResult && finalCanContinue && !sessionLogged && user?.id) {
       setSessionLogged(true);
       (async () => {
         try {
@@ -261,6 +399,26 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
               correctAnswers: resultCorrectCount,
               isAlreadyCompleted,
             });
+          }
+
+          // CALCULATE AND SAVE STARS
+          let stars = 0;
+          const scorePercent = resultTotalCount > 0 ? (resultCorrectCount / resultTotalCount) * 100 : 0;
+          if (scorePercent >= 100) stars = 3;
+          else if (scorePercent >= 80) stars = 2;
+          else if (scorePercent >= 70) stars = 1;
+
+          if (stars > 0 && nodeId) {
+            try {
+              await saveNodeStars({
+                userId: Number(user.id),
+                materialId: Number(materialId),
+                nodeId: String(nodeId),
+                stars
+              });
+            } catch (e) {
+              console.warn('Lỗi lưu số sao:', e);
+            }
           }
 
           // NẾU LÀ NODE CUỐI CÙNG (FINAL_BOSS) VÀ CHƯA TỪNG HOÀN THÀNH: CỘNG 100XP
@@ -325,7 +483,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         }
       })();
     }
-  }, [localShowResult, canContinue, heartDeducted, heartDeductionPending, deductHeartOnFailure, localHearts]);
+  }, [localShowResult, finalCanContinue, heartDeducted, heartDeductionPending, deductHeartOnFailure, localHearts]);
 
   const executeRetryWrapper = () => {
     setSessionLogged(false);
@@ -338,14 +496,14 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   };
 
   const executeExitWrapper = () => {
-    setNavigationBlocked(true);
+    navigationBlockedRef.current = true;
     try {
       const params: any = { materialId };
       if (typeof currentNodeIndex !== 'undefined') params.completedNodeIndex = currentNodeIndex;
       if (sessionId) params.sessionId = Number(sessionId);
       (async () => {
         try {
-          if (canContinue && !streakUpdated && user?.id) {
+          if (finalCanContinue && !streakUpdated && user?.id) {
             await checkAndTriggerDailyStreak(user.id);
             setStreakUpdated(true);
             await refreshUserStats();
@@ -374,8 +532,21 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
 
   const safeHandleContinueQuestion = React.useCallback(() => {
     if (showResult || localShowResult) return;
+    if (isBoss) {
+      if (energyPosition >= 100) {
+        if (executeBossExitWrapperRef.current) executeBossExitWrapperRef.current('win');
+        return;
+      } else if (energyPosition <= 0 || localHearts <= 0) {
+        if (executeBossExitWrapperRef.current) executeBossExitWrapperRef.current('lose');
+        return;
+      }
+    }
     handleContinueQuestion();
-  }, [showResult, localShowResult, handleContinueQuestion]);
+  }, [showResult, localShowResult, handleContinueQuestion, isBoss, energyPosition, localHearts]);
+
+  const safeHandleContinue = React.useCallback(() => {
+    handleContinue();
+  }, [handleContinue]);
 
   if (isLoading) return <QuizLoadingState />;
   if (loadError) return <QuizErrorState error={loadError} onRetry={reloadQuiz} />;
@@ -388,16 +559,16 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     return (
       <>
         <ResultScreen
-          score={displayScore}
-          displayScore={displayScore}
+          score={score}
+          displayScore={score}
           correctCount={resultCorrectCount}
           totalCount={resultTotalCount}
           answers={answers}
-          isBoss={isBoss && !isAlreadyCompleted}
+          isBoss={isBoss}
           onRetry={executeRetryWrapper} 
-          onContinue={executeExitWrapper} 
+          onContinue={executeExitWrapper}
           onExit={executeExitWrapper}
-          canContinue={canContinue}
+          canContinue={finalCanContinue}
           showStreakCelebration={currentNodeIndex === 0}
         />
 
@@ -429,13 +600,17 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     <>
       <QuizUI
         hearts={localHearts}
+        maxHearts={authContext?.maxHearts ?? 5}
         activeType={activeType!}
         currentWord={currentWord!}
         stepProgress={stepProgress}
         questionIndex={questionIndex}
         totalQuestionCount={totalCount}
         isBoss={isBoss}
+        energyPosition={energyPosition}
         isCorrect={isCorrect}
+        correctCount={correctCount}
+        wrongCount={answers.filter(a => !a.isCorrect).length}
         inputValue={inputValue}
         selectedOption={selectedOption}
         chosenTileIds={chosenTileIds}
@@ -511,6 +686,12 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         onShowMatchAnswers={showMatchAnswers}
         leftItemLayouts={leftItemLayouts}
         rightItemLayouts={rightItemLayouts}
+        promptType={promptType}
+        correctAnswer={correctAnswer}
+        onGameComplete={(_correct: boolean) => {
+          // MEMORY_CARD tự hoàn thành khi ghép hết cặp → chuyển sang câu tiếp theo
+          handleNextQuestion();
+        }}
       />
       <OutOfHeartsInterceptor
         isVisible={isOutOfHearts}
@@ -531,7 +712,15 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
           setIsOutOfHearts(false);
         }}
         onReturnToRoadmap={executeExitWrapper}
-        onStayOnResult={() => setIsOutOfHearts(false)}
+        onStayOnResult={() => {
+          setIsOutOfHearts(false);
+          if (isMatchMode) {
+            setTimeout(() => {
+              showMatchAnswers();
+              setLocalShowResult(false);
+            }, 5000);
+          }
+        }}
         onClose={() => setIsOutOfHearts(false)}
       />
     </>
