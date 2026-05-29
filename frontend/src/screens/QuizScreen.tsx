@@ -219,7 +219,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
                   }).catch(console.warn);
                 }
               }
-              navigation.navigate('MainTabs', { screen: 'Home' });
+              navigation.navigate('MainTabs' as any, { screen: 'Home' });
             }
           }
         ],
@@ -600,7 +600,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     <>
       <QuizUI
         hearts={localHearts}
-        maxHearts={authContext?.maxHearts ?? 5}
+        maxHearts={5}
         activeType={activeType!}
         currentWord={currentWord!}
         stepProgress={stepProgress}

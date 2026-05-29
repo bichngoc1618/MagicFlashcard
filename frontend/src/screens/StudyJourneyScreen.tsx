@@ -28,6 +28,7 @@ import ReAnimated, {
   interpolate,
   cancelAnimation,
   runOnJS,
+  SharedValue,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -459,7 +460,7 @@ const NodeItem = React.memo(
   },
 );
 
-const Particle = ({ angle, explosionAnim }: { angle: number, explosionAnim: ReAnimated.SharedValue<number> }) => {
+const Particle = ({ angle, explosionAnim }: { angle: number, explosionAnim: SharedValue<number> }) => {
   const dist = 100 + Math.random() * 80;
   const size = 20 + Math.random() * 20;
   
@@ -825,8 +826,8 @@ export default function StudyJourneyScreen({
     try {
       if (!user?.id) return;
 
-      let targetMaterialId = activeMaterialId;
-      if (!targetMaterialId) {
+      let targetMaterialId: number = activeMaterialId ?? 0;
+      if (targetMaterialId === 0) {
         const [profileRes, matsRes] = await Promise.all([
           getProfile(user.id),
           getMaterials(user.id)
@@ -834,7 +835,7 @@ export default function StudyJourneyScreen({
         const recentQuizzes = profileRes?.recentQuizzes || [];
         const allMaterials = matsRes?.materials || [];
 
-        let foundId = null;
+        let foundId: number | null = null;
         if (recentQuizzes.length > 0) {
           foundId = Number(recentQuizzes[0].material_id || recentQuizzes[0].materialId);
         }
@@ -1284,18 +1285,18 @@ export default function StudyJourneyScreen({
                         try {
                           await saveNodeStars({
                             userId: user.id,
-                            materialId: activeMaterialId,
+                            materialId: activeMaterialId || 1,
                             nodeId: activeNode.id,
                             stars: 3
                           });
                           const newNodeStars = { ...journeyData.nodeStars, [activeNode.id]: 3 };
-                          setJourneyData(prev => prev ? ({ ...prev, nodeStars: newNodeStars }) : null);
+                          setJourneyData((prev: any) => prev ? ({ ...prev, nodeStars: newNodeStars }) : null);
                         } catch (e) {
                           console.warn('Lỗi lưu sao quà tặng:', e);
                         }
                       }
                       const nextIndex = journeyData.currentActiveNodeIndex + 1;
-                      setJourneyData(prev => prev ? ({ ...prev, currentActiveNodeIndex: nextIndex }) : null);
+                      setJourneyData((prev: any) => prev ? ({ ...prev, currentActiveNodeIndex: nextIndex }) : null);
                       if (activeMaterialId) await updateStudyPathIndex(user.id, activeMaterialId, nextIndex);
                     }
                   }}

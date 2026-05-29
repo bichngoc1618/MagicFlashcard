@@ -314,10 +314,18 @@ export default function QuizQuestionBody({
 
   useEffect(() => {
     if (activeType === 'LISTENING' && currentWord?.hiragana) {
-      Speech.speak(currentWord.hiragana, { language: 'ja' });
+      try {
+        Speech.speak(currentWord.hiragana, { language: 'ja' });
+      } catch (e) {
+        console.warn('Speech.speak failed:', e);
+      }
     }
     return () => {
-      Speech.stop();
+      try {
+        Speech.stop();
+      } catch (e) {
+        // Ignore speech stop error
+      }
     };
   }, [activeType, currentWord]);
 
@@ -1014,7 +1022,13 @@ export default function QuizQuestionBody({
 
             <TouchableOpacity 
               style={{ alignItems: 'center', marginBottom: 24 }}
-              onPress={() => Speech.speak(currentWord.hiragana, { language: 'ja' })}
+              onPress={() => {
+                try {
+                  Speech.speak(currentWord.hiragana, { language: 'ja' });
+                } catch (e) {
+                  console.warn('Speech.speak failed:', e);
+                }
+              }}
             >
               <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.surfaceAlt, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: COLORS.secondary }}>
                 <Volume2 size={40} color={COLORS.primary} />

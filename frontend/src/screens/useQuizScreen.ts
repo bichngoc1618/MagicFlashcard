@@ -366,14 +366,15 @@ export default function useQuizScreen({
   const [inputValue, setInputValue] = useState('');
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [chosenTileIds, setChosenTileIds] = useState<string[]>([]);
-  const [timerSeconds, setTimerSeconds] = useState(20);
+  const [currentStep, setCurrentStep] = useState(0);
+  const effectiveQuizType: QuizType = quizStepType || PRACTICE_STEPS[currentStep] || 'MULTIPLE_CHOICE';
+  const [timerSeconds, setTimerSeconds] = useState(() => getTimerForType(effectiveQuizType));
   const [isTimeUp, setIsTimeUp] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [matchRound, setMatchRound] = useState(0);
-  const [currentStep, setCurrentStep] = useState(0);
   const [wrongPairs, setWrongPairs] = useState<Set<string>>(new Set());
   const [stepAnswers, setStepAnswers] = useState<AnswerRecord[][]>([]);
   const [autoNextCountdown, setAutoNextCountdown] = useState(0);
@@ -461,8 +462,6 @@ export default function useQuizScreen({
     return chunk as QuizWord[];
   }, [words, nodeType, batchIndex]);
 
-  const effectiveQuizType: QuizType = quizStepType || PRACTICE_STEPS[currentStep] || 'MULTIPLE_CHOICE';
-
   const questions = useMemo(() => {
     if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
       return buildFinalBossQuestions(batchWords, nodeType);
@@ -531,6 +530,7 @@ export default function useQuizScreen({
     setIsTimeUp(false);
     setHasSubmitted(false);
     setSelectedAnswer(null);
+    setIsCorrect(null);
     // Reset timer for the new question but preserve auto‑next countdown handling
     const currentQuestionType = questions[currentIndex]?.type || effectiveQuizType;
     setTimerSeconds(getTimerForType(currentQuestionType));
@@ -741,7 +741,7 @@ export default function useQuizScreen({
   const currentBatchMatchScore = pairAttempts === 0 ? 0 : Math.round((matchedIds.size / pairAttempts) * 100);
   const overallMatchScore = totalPairAttempts === 0 ? 0 : Math.round((totalMatchedPairs / totalPairAttempts) * 100);
 
-  const isTimerRunning = !showResult && isCorrect === null && !hasSubmitted;
+  const isTimerRunning = !isLoading && !showResult && isCorrect === null && !hasSubmitted;
 
   useEffect(() => {
     if (!isTimerRunning) {
@@ -907,7 +907,9 @@ export default function useQuizScreen({
         await handleCheckAnswer(correct, answer);
         break;
       }
-      case 'MULTIPLE_CHOICE': {
+      case 'MULTIPLE_CHOICE':
+      case 'LISTENING':
+      case 'TRUE_FALSE': {
         const correct = selectedOption === currentQuestion.correctAnswer;
         await handleCheckAnswer(correct, selectedOption);
         break;
@@ -962,8 +964,9 @@ export default function useQuizScreen({
     setSelectedLeftId(null);
     setSelectedRightId(null);
     setFeedbackMessage(null);
-    setTimerSeconds(getTimerForType(effectiveQuizType));
-  }, [effectiveQuizType]);
+    const currentQuestionType = questions[currentIndex]?.type || effectiveQuizType;
+    setTimerSeconds(getTimerForType(currentQuestionType));
+  }, [effectiveQuizType, questions, currentIndex]);
 
   const resetMatchStateForQuestion = useCallback(() => {
     setMatchRound(0);
@@ -983,8 +986,9 @@ export default function useQuizScreen({
     setSelectedLeftId(null);
     setSelectedRightId(null);
     setFeedbackMessage(null);
-    setTimerSeconds(getTimerForType(effectiveQuizType));
-  }, [effectiveQuizType]);
+    const currentQuestionType = questions[currentIndex]?.type || effectiveQuizType;
+    setTimerSeconds(getTimerForType(currentQuestionType));
+  }, [effectiveQuizType, questions, currentIndex]);
 
   const proceedAfterReview = useCallback(() => {
     setShowWrongPairsReview(false);

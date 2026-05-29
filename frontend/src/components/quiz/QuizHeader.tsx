@@ -33,7 +33,10 @@ export default function QuizHeader({
   const circumference = 2 * Math.PI * radius;
   
   // MATCH modes will be 20s. Others might be 10 or 8. We can use total limits dynamically or just hardcode for visuals.
-  const totalTime = activeType.startsWith('MATCH_') ? 20 : (activeType === 'MULTIPLE_CHOICE' ? 8 : 20);
+  const totalTime = 
+    activeType === 'TRUE_FALSE' ? 4 :
+    (activeType === 'MULTIPLE_CHOICE' || activeType === 'LISTENING') ? 8 : 
+    20;
   const progress = Math.max(0, remainingSeconds / totalTime);
   const strokeDashoffset = circumference - progress * circumference;
 

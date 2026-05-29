@@ -14,6 +14,7 @@ export type UserProfile = {
   lastStudyDate?: string;
   globalHearts?: number;
   avatar_id?: string;
+  display_name?: string;
 };
 
 type StreakTriggerResult = {

@@ -37,6 +37,7 @@ export type RootStackParamList = {
     completedNodeId?: string;
     completedNodeIndex?: number;
     sessionId?: number;
+    bossResult?: 'win' | 'lose' | null;
   };
 
   // 🦈 Màn hình Flashcard: Thêm nodeIndex để biết đang ở nút nào trên zigzag
