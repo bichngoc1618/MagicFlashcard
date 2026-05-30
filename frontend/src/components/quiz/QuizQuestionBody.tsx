@@ -149,6 +149,7 @@ type Props = {
   promptType?: string;
   correctAnswer?: string;
   isBoss?: boolean;
+  activeDebuff?: 'DOUBLE_DAMAGE' | 'FREEZE' | null;
 };
 
 const ChoiceOption = React.memo(
@@ -305,6 +306,7 @@ export default function QuizQuestionBody({
   promptType,
   correctAnswer,
   isBoss = false,
+  activeDebuff = null,
 }: Props) {
   const cardRef = useRef<View>(null);
   const answerRefs = useRef<Record<number, any>>({});

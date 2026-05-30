@@ -21,6 +21,8 @@ interface BossBattleHeaderProps {
   isHealing?: boolean; // User correct
   remainingSeconds: number;
   hearts: number;
+  bossShieldActive?: boolean;
+  bossStunned?: boolean;
 }
 
 export default function BossBattleHeader({
@@ -30,6 +32,8 @@ export default function BossBattleHeader({
   isHealing = false,
   remainingSeconds,
   hearts,
+  bossShieldActive = false,
+  bossStunned = false,
 }: BossBattleHeaderProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -43,6 +47,8 @@ export default function BossBattleHeader({
   const bossShake = useSharedValue(0);
   const energyAnim = useSharedValue(50);
   const timerScale = useSharedValue(1);
+  const badgePulse = useSharedValue(1);
+  const stunRotate = useSharedValue(0);
 
   useEffect(() => {
     // Animate energy bar smoothly
@@ -91,6 +97,37 @@ export default function BossBattleHeader({
     }
   }, [remainingSeconds]);
 
+  // Shield badge pulsing glow
+  useEffect(() => {
+    if (bossShieldActive) {
+      badgePulse.value = withRepeat(
+        withSequence(
+          withTiming(1.25, { duration: 600 }),
+          withTiming(1, { duration: 600 })
+        ),
+        -1,
+        true
+      );
+    } else {
+      cancelAnimation(badgePulse);
+      badgePulse.value = withTiming(1);
+    }
+  }, [bossShieldActive]);
+
+  // Stun badge spinning
+  useEffect(() => {
+    if (bossStunned) {
+      stunRotate.value = withRepeat(
+        withTiming(360, { duration: 1200 }),
+        -1,
+        false
+      );
+    } else {
+      cancelAnimation(stunRotate);
+      stunRotate.value = withTiming(0, { duration: 200 });
+    }
+  }, [bossStunned]);
+
   const playerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: playerShake.value }]
   }));
@@ -105,6 +142,14 @@ export default function BossBattleHeader({
 
   const timerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: timerScale.value }]
+  }));
+
+  const badgePulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: badgePulse.value }]
+  }));
+
+  const stunRotateStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${stunRotate.value}deg` }]
   }));
 
   return (
@@ -151,10 +196,28 @@ export default function BossBattleHeader({
 
       {/* Boss Corner */}
       <Animated.View style={[styles.avatarContainer, bossAnimatedStyle]}>
-        <Image
-          source={require('../../../assets/evil_boss.png')}
-          style={styles.avatarImage}
-        />
+        <View style={styles.bossAvatarWrapper}>
+          <Image
+            source={require('../../../assets/evil_boss.png')}
+            style={[
+              styles.avatarImage,
+              bossShieldActive && styles.avatarShieldGlow,
+              bossStunned && styles.avatarStunnedGlow,
+            ]}
+          />
+          {/* Shield overlay badge */}
+          {bossShieldActive && (
+            <Animated.View style={[styles.statusBadge, styles.shieldBadge, badgePulseStyle]}>
+              <Ionicons name="shield" size={14} color="#FFF" />
+            </Animated.View>
+          )}
+          {/* Stunned overlay badge */}
+          {bossStunned && (
+            <Animated.View style={[styles.statusBadge, styles.stunnedBadge, stunRotateStyle]}>
+              <Text style={{ fontSize: 12 }}>💫</Text>
+            </Animated.View>
+          )}
+        </View>
         <Text style={styles.nameText} numberOfLines={1}>{bossName}</Text>
       </Animated.View>
 
@@ -260,5 +323,46 @@ const styles = StyleSheet.create({
     width: 2,
     backgroundColor: 'rgba(255,255,255,0.4)',
     transform: [{ translateX: -1 }],
-  }
+  },
+  bossAvatarWrapper: {
+    position: 'relative',
+  },
+  avatarShieldGlow: {
+    borderColor: '#F59E0B',
+    borderWidth: 3,
+    ...Platform.select({
+      ios: { shadowColor: '#F59E0B', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 10 },
+      android: { elevation: 12 },
+    }),
+  },
+  avatarStunnedGlow: {
+    borderColor: '#EF4444',
+    borderWidth: 3,
+    ...Platform.select({
+      ios: { shadowColor: '#EF4444', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 10 },
+      android: { elevation: 12 },
+    }),
+  },
+  statusBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFF',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.5, shadowRadius: 4 },
+      android: { elevation: 6 },
+    }),
+  },
+  shieldBadge: {
+    backgroundColor: '#D97706',
+  },
+  stunnedBadge: {
+    backgroundColor: '#DC2626',
+  },
 });

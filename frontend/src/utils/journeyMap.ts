@@ -152,6 +152,20 @@ export function generateJourneyNodes(chunks: VocabItem[][]): JourneyNode[] {
       });
       topPointer += verticalGap + 50;
     }
+
+    // Boss Node phụ sau mỗi 5 chunks (nếu không trùng với boss cuối)
+    if ((batchIndex + 1) % 5 === 0 && batchIndex !== chunks.length - 1) {
+      const lastFiveChunksWords = chunks.slice(i - 4, i + 1).flat();
+      nodes.push({
+        id: `boss-${Math.floor((batchIndex + 1) / 5)}`,
+        nodeType: 'FINAL_BOSS',
+        batchIndex,
+        words: lastFiveChunksWords,
+        left: centerPosition,
+        top: topPointer + 80,
+      });
+      topPointer += verticalGap + 80;
+    }
   }
 
   // Final Boss ở cuối

@@ -28,6 +28,7 @@ type QuizFooterProps = {
   matchRound: number;
   matchRoundCount: number;
   matchScore: number;
+  matchRoundScore: number;
 
   feedbackMessage?: string | null;
   isSubmitting: boolean;
@@ -65,6 +66,7 @@ export default function QuizFooter({
   matchRound,
   matchRoundCount,
   matchScore,
+  matchRoundScore,
 
   feedbackMessage,
   isSubmitting,
@@ -105,7 +107,7 @@ export default function QuizFooter({
     };
     
     if (isCorrect !== null) {
-      if (isMatchMode && matchScore < 80) {
+      if (isMatchMode && isCorrect === false) {
         clearExistingTimers();
         setCountdown(null);
         return;
@@ -119,7 +121,6 @@ export default function QuizFooter({
 
       setCountdown(3);
       timeoutRef.current = setTimeout(() => {
-        onSetIsCorrect(null);
         onContinue();
       }, 3000);
       
@@ -171,7 +172,7 @@ export default function QuizFooter({
   const isCheckDisabled = !isCheckEnabled || isSubmitting;
   const isLastMatchRound = isMatchMode && matchRound + 1 >= matchRoundCount;
   const isFirstMatchRound = isMatchMode && matchRound === 0;
-  const shouldShowRetryModal = isMatchMode && isFirstMatchRound && isCorrect === false && matchScore < 80;
+  const shouldShowRetryModal = isMatchMode && isFirstMatchRound && isCorrect === false;
 
   // Đã gỡ bỏ Alert "Cần làm lại" vì nó gây xung đột Modal (chết cảm ứng) khi người dùng hết tim.
   // Giao diện đã có thông báo "Chưa đạt yêu cầu!" màu đỏ và nút "Làm lại đợt này" rất rõ ràng.
@@ -266,7 +267,7 @@ export default function QuizFooter({
             </View>
           )}
         </View>
-      ) : isMatchMode && matchScore < 80 ? (
+      ) : isMatchMode && isCorrect === false ? (
         
         /* TRẠNG THÁI GHÉP CẶP CHƯA ĐẠT CẦN LÀM LẠI */
         <View style={styles.actionContainer}>
@@ -277,7 +278,7 @@ export default function QuizFooter({
             </View>
             <View style={styles.answerInfoBox}>
               <Text style={[styles.answerLabelText, { color: colors.textSecondary }]}>
-                Bạn đã ghép đúng: <Text style={{ color: dangerTextColor, fontWeight: '900' }}>{matchScore}%</Text>
+                Bạn đã ghép đúng: <Text style={{ color: dangerTextColor, fontWeight: '900' }}>{matchRoundScore}%</Text>
               </Text>
             </View>
           </View>
@@ -320,10 +321,7 @@ export default function QuizFooter({
               <TouchableOpacity
                 activeOpacity={0.9}
                 disabled={isSubmitting}
-                onPress={() => {
-                  onSetIsCorrect(null);
-                  onContinue();
-                }}
+                onPress={onContinue}
                 style={[styles.checkButton, { backgroundColor: isDark ? '#7F1D1D' : '#EF4444' }]}
               >
                 <Text style={styles.checkButtonText}>Xem kết quả</Text>
@@ -349,7 +347,7 @@ export default function QuizFooter({
 
             <View style={styles.answerInfoBox}>
               <Text style={[styles.answerLabelText, { color: isDark ? colors.text : colors.textSecondary }]}>
-                {isMatchMode ? `Bạn đã ghép đúng: ${matchScore}%` : 'Đáp án chuẩn:'}
+                {isMatchMode ? `Bạn đã ghép đúng: ${matchRoundScore}%` : 'Đáp án chuẩn:'}
               </Text>
               {!isMatchMode && (
                 <Text style={[styles.answerValueText, { color: isCorrect ? successTextColor : dangerTextColor }]}>
@@ -371,10 +369,7 @@ export default function QuizFooter({
             <TouchableOpacity
               activeOpacity={0.9}
               disabled={isSubmitting}
-              onPress={() => {
-                onSetIsCorrect(null);
-                onContinue();
-              }}
+              onPress={onContinue}
               style={[
                 styles.checkButton,
                 isCorrect 

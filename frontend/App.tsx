@@ -27,6 +27,11 @@ const GlobalWebStyles = () => {
   return (
     <style type="text/css">
       {`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+        body, input, button, textarea, select {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+        }
         body {
           overscroll-behavior-y: none;
           touch-action: pan-x pan-y;

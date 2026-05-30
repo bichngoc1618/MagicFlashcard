@@ -109,9 +109,13 @@ export const triggerSyncQueue = async () => {
   }
 };
 
-const request = async (path: string, options: RequestInit = {}) => {
+export const request = async (path: string, options: RequestInit = {}) => {
   const method = options.method || 'GET';
   const cacheKey = getCacheKeyForPath(path);
+
+  // Extend timeout for specific endpoints that may take longer
+  const extendedPaths = ['/gamification/refill', '/progress/srs-review'];
+  const timeoutMs = extendedPaths.some(p => path.includes(p)) ? 15000 : 5000;
 
   if (method === 'GET') {
     try {
@@ -122,20 +126,20 @@ const request = async (path: string, options: RequestInit = {}) => {
           ...(options.headers || {}),
         },
         ...options,
-      }, 5000);
+      }, timeoutMs);
       const data = await parseJson(response);
       if (!response.ok) {
         throw new Error(data?.error || `Request failed ${response.status}`);
       }
-      
+
       if (cacheKey) {
         await setCachedData(cacheKey, data);
       }
-      
+
       setTimeout(() => {
         syncPendingMutations(syncRequest).catch(err => console.warn('Background sync failed:', err));
       }, 50);
-      
+
       return data;
     } catch (error: any) {
       if (cacheKey) {
@@ -156,25 +160,25 @@ const request = async (path: string, options: RequestInit = {}) => {
           ...(options.headers || {}),
         },
         ...options,
-      }, 5000);
+      }, timeoutMs);
       const data = await parseJson(response);
       if (!response.ok) {
         throw new Error(data?.error || `Request failed ${response.status}`);
       }
-      
+
       setTimeout(() => {
         syncPendingMutations(syncRequest).catch(err => console.warn('Background sync failed:', err));
       }, 50);
-      
+
       return data;
     } catch (error: any) {
-      const isNetworkError = error.message?.includes('Network request failed') || 
+      const isNetworkError = error.message?.includes('Network request failed') ||
                              error.message?.includes('Failed to fetch') ||
                              error.message?.includes('connection') ||
                              error.message?.includes('timeout') ||
                              error.name === 'AbortError' ||
                              error instanceof TypeError;
-      
+
       if (isNetworkError) {
         console.log(`🌐 Offline mode: queueing mutation for ${method} ${path}`);
         await queueMutation(path, options);
@@ -183,6 +187,7 @@ const request = async (path: string, options: RequestInit = {}) => {
       throw error;
     }
   }
+  // Duplicate request logic removed; original implementation retained above
 };
 
 export const login = async (email: string, password: string) => {

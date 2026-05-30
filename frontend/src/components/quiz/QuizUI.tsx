@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { X, BookOpen } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, withRepeat } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
@@ -75,6 +76,7 @@ export interface QuizUIProps {
   onHandlePairSelection: (leftId: string, rightId: string) => void;
   isMatchComplete: boolean;
   matchScore: number;
+  matchRoundScore: number;
   feedbackMessage?: string | null;
   isSubmitting: boolean;
   onChangeInput: (value: string) => void;
@@ -95,6 +97,10 @@ export interface QuizUIProps {
   rightItemLayouts: React.MutableRefObject<Record<string, LayoutRectangle>>;
   promptType?: string;
   correctAnswer?: string;
+  bossShieldActive?: boolean;
+  correctStreak?: number;
+  bossStunned?: boolean;
+  activeDebuff?: 'DOUBLE_DAMAGE' | 'FREEZE' | null;
 }
 
 export default function QuizUI({
@@ -142,6 +148,7 @@ export default function QuizUI({
   onHandlePairSelection,
   isMatchComplete,
   matchScore,
+  matchRoundScore,
   feedbackMessage,
   isSubmitting,
   onChangeInput,
@@ -162,6 +169,10 @@ export default function QuizUI({
   rightItemLayouts,
   promptType,
   correctAnswer,
+  bossShieldActive = false,
+  correctStreak = 0,
+  bossStunned = false,
+  activeDebuff = null,
 }: QuizUIProps) {
   const { colors, theme } = useTheme();
   const isDark = theme === 'dark';
@@ -245,6 +256,8 @@ export default function QuizUI({
             bossName="Tà thú Kanji"
             remainingSeconds={remainingSeconds}
             hearts={hearts}
+            bossShieldActive={bossShieldActive}
+            bossStunned={bossStunned}
           />
         ) : (
           <QuizHeader
@@ -286,50 +299,120 @@ export default function QuizUI({
               </Text>
             </View>
 
-            <QuizQuestionBody
-              activeType={activeType}
-              currentWord={currentWord}
-              inputValue={inputValue}
-              selectedOption={selectedOption}
-              chosenTileIds={chosenTileIds}
-              matchedIds={matchedIds}
-              wrongPair={wrongPair}
-              matchingContainerHeight={matchingContainerHeight}
-              currentMatchWords={currentMatchWords}
-              currentMatchRightItems={currentMatchRightItems}
-              remainingSeconds={remainingSeconds}
-              isMatchMode={isMatchMode}
-              multipleChoiceOptions={multipleChoiceOptions}
-              selectedScrambledChars={selectedScrambledChars}
-              tiles={tiles}
-              selectedLeftId={selectedLeftId}
-              selectedRightId={selectedRightId}
-              pairAssignments={pairAssignments}
-              wrongPairs={wrongPairs}
-              isTimeUp={isTimeUp}
-              hasSubmitted={hasSubmitted}
-              selectedAnswer={selectedAnswer}
-              matchRound={matchRound}
-              matchRoundCount={matchRoundCount}
-              onHandleChoiceAnswer={onHandleChoiceAnswer}
-              onGameComplete={onGameComplete}
-              onHandlePairSelection={onHandlePairSelection}
-              isMatchComplete={isMatchComplete}
-              matchScore={matchScore}
-              onChangeInput={onChangeInput}
-              onSelectOption={onSelectOption}
-              onPressTile={onPressTile}
-              onRemoveTile={onRemoveTile}
-              onResetChosenTileIds={onResetChosenTileIds}
-              onSetSelectedLeftId={onSetSelectedLeftId}
-              onSetSelectedRightId={onSetSelectedRightId}
-              onSetMatchingContainerHeight={onSetMatchingContainerHeight}
-              leftItemLayouts={leftItemLayouts}
-              rightItemLayouts={rightItemLayouts}
-              promptType={promptType}
-              correctAnswer={correctAnswer}
-              isBoss={isBoss}
-            />
+            {isBoss && activeDebuff ? (
+              <View style={[
+                styles.debuffCardWrapper,
+                activeDebuff === 'FREEZE' && styles.debuffFreezeGlow,
+                activeDebuff === 'DOUBLE_DAMAGE' && styles.debuffFireGlow,
+              ]}>
+                {/* Floating corner badge */}
+                <View style={[
+                  styles.debuffFloatingBadge,
+                  activeDebuff === 'FREEZE'
+                    ? { backgroundColor: '#0EA5E9' }
+                    : { backgroundColor: '#EF4444' },
+                ]}>
+                  <Text style={styles.debuffBadgeEmoji}>
+                    {activeDebuff === 'FREEZE' ? '❄️' : '💥'}
+                  </Text>
+                  <Text style={styles.debuffBadgeText}>
+                    {activeDebuff === 'FREEZE' ? 'BĂNG PHONG' : 'TRỌNG KÍCH'}
+                  </Text>
+                </View>
+
+                <QuizQuestionBody
+                  activeType={activeType}
+                  currentWord={currentWord}
+                  inputValue={inputValue}
+                  selectedOption={selectedOption}
+                  chosenTileIds={chosenTileIds}
+                  matchedIds={matchedIds}
+                  wrongPair={wrongPair}
+                  matchingContainerHeight={matchingContainerHeight}
+                  currentMatchWords={currentMatchWords}
+                  currentMatchRightItems={currentMatchRightItems}
+                  remainingSeconds={remainingSeconds}
+                  isMatchMode={isMatchMode}
+                  multipleChoiceOptions={multipleChoiceOptions}
+                  selectedScrambledChars={selectedScrambledChars}
+                  tiles={tiles}
+                  selectedLeftId={selectedLeftId}
+                  selectedRightId={selectedRightId}
+                  pairAssignments={pairAssignments}
+                  wrongPairs={wrongPairs}
+                  isTimeUp={isTimeUp}
+                  hasSubmitted={hasSubmitted}
+                  selectedAnswer={selectedAnswer}
+                  matchRound={matchRound}
+                  matchRoundCount={matchRoundCount}
+                  onHandleChoiceAnswer={onHandleChoiceAnswer}
+                  onGameComplete={onGameComplete}
+                  onHandlePairSelection={onHandlePairSelection}
+                  isMatchComplete={isMatchComplete}
+                  matchScore={matchScore}
+                  onChangeInput={onChangeInput}
+                  onSelectOption={onSelectOption}
+                  onPressTile={onPressTile}
+                  onRemoveTile={onRemoveTile}
+                  onResetChosenTileIds={onResetChosenTileIds}
+                  onSetSelectedLeftId={onSetSelectedLeftId}
+                  onSetSelectedRightId={onSetSelectedRightId}
+                  onSetMatchingContainerHeight={onSetMatchingContainerHeight}
+                  leftItemLayouts={leftItemLayouts}
+                  rightItemLayouts={rightItemLayouts}
+                  promptType={promptType}
+                  correctAnswer={correctAnswer}
+                  isBoss={isBoss}
+                  activeDebuff={activeDebuff}
+                />
+              </View>
+            ) : (
+              <QuizQuestionBody
+                activeType={activeType}
+                currentWord={currentWord}
+                inputValue={inputValue}
+                selectedOption={selectedOption}
+                chosenTileIds={chosenTileIds}
+                matchedIds={matchedIds}
+                wrongPair={wrongPair}
+                matchingContainerHeight={matchingContainerHeight}
+                currentMatchWords={currentMatchWords}
+                currentMatchRightItems={currentMatchRightItems}
+                remainingSeconds={remainingSeconds}
+                isMatchMode={isMatchMode}
+                multipleChoiceOptions={multipleChoiceOptions}
+                selectedScrambledChars={selectedScrambledChars}
+                tiles={tiles}
+                selectedLeftId={selectedLeftId}
+                selectedRightId={selectedRightId}
+                pairAssignments={pairAssignments}
+                wrongPairs={wrongPairs}
+                isTimeUp={isTimeUp}
+                hasSubmitted={hasSubmitted}
+                selectedAnswer={selectedAnswer}
+                matchRound={matchRound}
+                matchRoundCount={matchRoundCount}
+                onHandleChoiceAnswer={onHandleChoiceAnswer}
+                onGameComplete={onGameComplete}
+                onHandlePairSelection={onHandlePairSelection}
+                isMatchComplete={isMatchComplete}
+                matchScore={matchScore}
+                onChangeInput={onChangeInput}
+                onSelectOption={onSelectOption}
+                onPressTile={onPressTile}
+                onRemoveTile={onRemoveTile}
+                onResetChosenTileIds={onResetChosenTileIds}
+                onSetSelectedLeftId={onSetSelectedLeftId}
+                onSetSelectedRightId={onSetSelectedRightId}
+                onSetMatchingContainerHeight={onSetMatchingContainerHeight}
+                leftItemLayouts={leftItemLayouts}
+                rightItemLayouts={rightItemLayouts}
+                promptType={promptType}
+                correctAnswer={correctAnswer}
+                isBoss={isBoss}
+                activeDebuff={activeDebuff}
+              />
+            )}
           </Animated.ScrollView>
 
           {/* 3. Footer chứa nút "Kiểm tra" cố định ở đáy */}
@@ -348,6 +431,7 @@ export default function QuizUI({
               matchRound={matchRound}
               matchRoundCount={matchRoundCount}
               matchScore={matchScore}
+              matchRoundScore={matchRoundScore}
               feedbackMessage={feedbackMessage}
               isSubmitting={isSubmitting}
               autoNextCountdown={autoNextCountdown}
@@ -387,7 +471,7 @@ export default function QuizUI({
                 bounces={false}
               >
                 {currentMatchWords
-                  .filter(w => Array.from(wrongPairs).some(pair => pair.startsWith(w.id + '-')))
+                  .filter(w => Array.from(wrongPairs).some(pair => pair.startsWith(w.id + '_||_')))
                   .map((word, idx) => (
                     <View key={word.id} style={[styles.listItem, { borderColor: isDark ? '#1E293B' : '#F1F5F9', backgroundColor: colors.background }]}>
                       <Text style={[styles.listIndex, { color: themePrimaryColor }]}>{idx + 1}.</Text>
@@ -546,5 +630,70 @@ const styles = StyleSheet.create({
     fontWeight: '900', 
     fontSize: 15,
     letterSpacing: 0.5,
-  }
+  },
+  bossStatusContainer: {
+    marginBottom: 16,
+  },
+  statusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  statusBannerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
+  },
+  debuffCardWrapper: {
+    position: 'relative',
+    borderRadius: 16,
+    borderWidth: 2,
+    padding: 4,
+    marginBottom: 8,
+  },
+  debuffFreezeGlow: {
+    borderColor: '#0EA5E9',
+    backgroundColor: 'rgba(14, 165, 233, 0.06)',
+    ...Platform.select({
+      ios: { shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 12 },
+      android: { elevation: 8 },
+    }),
+  },
+  debuffFireGlow: {
+    borderColor: '#EF4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.06)',
+    ...Platform.select({
+      ios: { shadowColor: '#EF4444', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 12 },
+      android: { elevation: 8 },
+    }),
+  },
+  debuffFloatingBadge: {
+    position: 'absolute',
+    top: -10,
+    right: 12,
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 4 },
+      android: { elevation: 6 },
+    }),
+  },
+  debuffBadgeEmoji: {
+    fontSize: 12,
+    marginRight: 4,
+  },
+  debuffBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
 });

@@ -53,6 +53,8 @@ import {
 
 import { StackScreenProps } from '@react-navigation/stack';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useStableCallback } from '../hooks/useStableCallback';
 import Svg, { Path, G, Circle, Defs, Stop, RadialGradient, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
 import { useAuthContext } from '../context/AuthContext';
@@ -205,6 +207,7 @@ const NodeItem = React.memo(
     themeColors,
     isDark,
     stars = 0,
+    forwardedRef,
   }: any) => {
     const isCompleted = index < activeIdx;
     const isActive = index === activeIdx;
@@ -221,7 +224,7 @@ const NodeItem = React.memo(
     const glowProgress = useSharedValue(0);
 
     useEffect(() => {
-      if (isActive) {
+      if (isActive && Platform.OS !== 'web') {
         // Nhịp thở tự nhiên sinh học — lặp vô hạn trên UI Thread
         breatheScale.value = withRepeat(
           withSequence(
@@ -401,6 +404,7 @@ const NodeItem = React.memo(
             },
             topButtonStyle,
           ]}
+          ref={forwardedRef}
         >
           <TouchableOpacity
             activeOpacity={1}
@@ -463,7 +467,7 @@ const NodeItem = React.memo(
 const Particle = ({ angle, explosionAnim }: { angle: number, explosionAnim: SharedValue<number> }) => {
   const dist = 100 + Math.random() * 80;
   const size = 20 + Math.random() * 20;
-  
+
   const style = useAnimatedStyle(() => {
     return {
       opacity: interpolate(explosionAnim.value, [0, 0.1, 1], [0, 1, 0]),
@@ -475,8 +479,8 @@ const Particle = ({ angle, explosionAnim }: { angle: number, explosionAnim: Shar
       ]
     };
   });
-  
-  return <ReAnimated.Image source={require('../../assets/avatar/evil_boss.png')} style={[{ position: 'absolute', width: size, height: size, borderRadius: size/2 }, style]} />
+
+  return <ReAnimated.Image source={require('../../assets/avatar/evil_boss.png')} style={[{ position: 'absolute', width: size, height: size, borderRadius: size / 2 }, style]} />
 };
 
 const BossResultPopup = ({ isVisible, result, onHide, isDark }: { isVisible: boolean, result: 'win' | 'lose', onHide: () => void, isDark: boolean }) => {
@@ -499,7 +503,7 @@ const BossResultPopup = ({ isVisible, result, onHide, isDark }: { isVisible: boo
       opacity.value = withTiming(1, { duration: 300 });
       textOpacity.value = withTiming(1, { duration: 300 });
       scale.value = withSpring(1, { damping: 12, stiffness: 90 });
-      
+
       setTimeout(() => {
         if (result === 'win') {
           shakeX.value = withSequence(
@@ -552,8 +556,8 @@ const BossResultPopup = ({ isVisible, result, onHide, isDark }: { isVisible: boo
           <ReAnimated.View style={animatedStyle}>
             <Image source={require('../../assets/avatar/evil_boss.png')} style={{ width: 250, height: 250 }} resizeMode="contain" />
           </ReAnimated.View>
-          {result === 'win' && Array.from({length: 12}).map((_, i) => (
-             <Particle key={i} angle={(Math.PI * 2 * i) / 12} explosionAnim={explosionAnim} />
+          {result === 'win' && Array.from({ length: 12 }).map((_, i) => (
+            <Particle key={i} angle={(Math.PI * 2 * i) / 12} explosionAnim={explosionAnim} />
           ))}
         </View>
         <ReAnimated.View style={[{ marginTop: 20, alignItems: 'center' }, textAnimatedStyle]}>
@@ -616,7 +620,7 @@ export default function StudyJourneyScreen({
     "Tuyệt vời! Chặng đua mới đang chờ!",
     "Đừng dừng lại, bạn đang làm rất tốt! ",
     "Sắp tới chặng kết rồi, cố lên!",
-    "Bứt phá giới hạn cùng Shark Magic nào! ✨",
+    "Bứt phá giới hạn cùng Samekun nào! ✨",
   ], []);
 
   // Thay đổi câu thoại ngẫu nhiên cứ sau mỗi 7 giây để tạo cảm giác linh hoạt
@@ -678,8 +682,10 @@ export default function StudyJourneyScreen({
     return { activePathD: activePath, inactivePathD: inactivePath };
   }, [journeyData]);
 
-  // Nhịp nhảy & thở mascot — lặp vô hạn trên UI Thread
+  // Nhịp nhảy & thở mascot — lặp vô hạn trên UI Thread (chỉ chạy trên Mobile để tối ưu Web)
   useEffect(() => {
+    if (Platform.OS === 'web') return;
+
     jumpVal.value = withRepeat(
       withSequence(
         withTiming(-12, { duration: 900 }),
@@ -712,7 +718,7 @@ export default function StudyJourneyScreen({
         { translateY: mascotY.value },
         { translateX: -MASCOT_SIZE / 2 },
         { translateY: jumpVal.value },
-        { scale: breathVal.value },
+        { scale: breathVal.value * zoomVal.value },
       ],
     };
   });
@@ -771,7 +777,7 @@ export default function StudyJourneyScreen({
   const [chestReward, setChestReward] = useState<{ type: 'XP' | 'HEART', amount: number } | null>(null);
   const [selectedChestIndex, setSelectedChestIndex] = useState<number | null>(null);
 
-  const onNodePressWrapper = useCallback(
+  const onNodePressWrapper = useStableCallback(
     (node: any, index: number, matId: number, nav: any, currentUser?: any, isAlreadyCompleted?: boolean) => {
       if (node.nodeType === 'TREASURE_CHEST') {
         if (!isAlreadyCompleted) {
@@ -789,8 +795,7 @@ export default function StudyJourneyScreen({
         return;
       }
       handleNodePress(node, index, matId, nav, currentUser, isAlreadyCompleted);
-    },
-    [globalHearts],
+    }
   );
 
   const handleBuyHeart = async () => {
@@ -931,7 +936,7 @@ export default function StudyJourneyScreen({
     return () => clearTimeout(timer);
   }, [journeyData, focusActiveNode]);
 
-  const handleScroll = useCallback((e: any) => {
+  const handleScroll = useStableCallback((e: any) => {
     const y = e.nativeEvent.contentOffset.y;
     setShowScrollTop(y > 400);
     // Only update scrollY state when it shifts by more than 150px to avoid excessive re-renders
@@ -939,7 +944,7 @@ export default function StudyJourneyScreen({
       lastScrollY.current = y;
       setScrollY(y);
     }
-  }, []);
+  });
 
   if (isLoading || !journeyData) {
     return (
@@ -1152,12 +1157,12 @@ export default function StudyJourneyScreen({
 
             {journeyData.journeyNodes.map((node: any, index: number) => {
               const stars = journeyData.nodeStars?.[node.id] || 0;
-              
+
               // Lazy render: only render nodes within visible window (plus a generous buffer of 1.5 screen heights)
               const minVisibleY = scrollY - SCREEN_HEIGHT * 1.5;
               const maxVisibleY = scrollY + SCREEN_HEIGHT * 2.5;
               const isVisible = index === journeyData.currentActiveNodeIndex || (node.top >= minVisibleY && node.top <= maxVisibleY);
-              
+
               if (!isVisible) return null;
 
               return (
@@ -1554,6 +1559,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 4,
+    zIndex: 100,
+    // @ts-ignore
+    cursor: 'pointer',
   },
   modalBackdrop: {
     flex: 1,

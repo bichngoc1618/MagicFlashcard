@@ -14,8 +14,8 @@ import { useAuthContext } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useGlobalUI } from '../context/GlobalUIContext';
 import { completeQuizSession, syncStudy, completeSrsReview, saveNodeStars } from '../api/api';
-import DuoHearts from '../components/quiz/DuoHearts';
 import useQuizScreen from './useQuizScreen';
+import { useStableCallback } from '../hooks/useStableCallback';
 
 type QuizScreenProps = StackScreenProps<RootStackParamList, 'Quiz'>;
 
@@ -77,6 +77,8 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   // Kiểm soát hiển thị Modal Hết Tim và Block điều hướng tự động
   const [heartDeductionPending, setHeartDeductionPending] = React.useState(false);
   const [isOutOfHearts, setIsOutOfHearts] = React.useState(false);
+  const [bossResurrected, setBossResurrected] = React.useState(false);
+  const [energyOffset, setEnergyOffset] = React.useState(0);
   const navigationBlockedRef = React.useRef(false);
 
   // CRITICAL SHIELD STATE: Ép màn hình hiển thị Kết quả ở tầng giao diện cao nhất
@@ -155,6 +157,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     submitMatchAnswer,
     isMatchComplete,
     matchScore,
+    matchRoundScore,
     checkInputAnswer,
     verifyScrambled,
     handleChoiceAnswer,
@@ -168,6 +171,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     proceedAfterReview,
     showMatchAnswers,
     isReviewComplete,
+    activeDebuff,
   } = useQuizScreen({
     materialId,
     nodeId,
@@ -187,12 +191,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     deductHeartOnFailure: stableDeductHeartOnFailure,
   });
 
-  // ĐỒNG BỘ TRẠNG THÁI: Khi câu hỏi cuối cùng chạy xong kích hoạt tấm khiên cục bộ hiển thị Kết quả
-  useEffect(() => {
-    if (showResult === true) {
-      setLocalShowResult(true);
-    }
-  }, [showResult]);
+  // (showResult useEffect moved below energyPosition declaration to avoid block-scoped variable hoisting compiler error)
 
   useEffect(() => {
     if (isReviewComplete) {
@@ -229,9 +228,79 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
   }, [isReviewComplete, navigation, user?.id, materialId, sessionId, currentNodeIndex, nodeType, answers, showAlert]);
 
   // BOSS BATTLE EARLY EXIT AND ENERGY MECHANIC
-  const bossWrongCount = answers.filter(a => !a.isCorrect).length;
+  const { rawEnergy, progressiveWrongCount, bossShieldActive, correctStreak, bossStunned } = React.useMemo(() => {
+    if (!isBoss || totalCount === 0) {
+      return { rawEnergy: 50, progressiveWrongCount: 0, bossShieldActive: false, correctStreak: 0, bossStunned: false };
+    }
+    
+    let energy = 50;
+    const step = 50 / totalCount;
+    let consecutiveWrong = 0;
+    let wrongSum = 0;
+    
+    let shieldActive = true;
+    let currentStreak = 0;
+    let stunned = false;
+    
+    answers.forEach((ans) => {
+      if (ans.isCorrect) {
+        consecutiveWrong = 0;
+        let damageMultiplier = 1.0;
+        
+        if (shieldActive) {
+          currentStreak += 1;
+          damageMultiplier = 0.5;
+          if (currentStreak >= 3) {
+            shieldActive = false;
+            stunned = true;
+          }
+        } else if (stunned) {
+          damageMultiplier = 1.5;
+          stunned = false;
+        }
+        
+        energy += step * damageMultiplier;
+      } else {
+        consecutiveWrong += 1;
+        wrongSum += 1;
+        if (shieldActive) {
+          currentStreak = 0;
+        }
+        
+        let baseMultiplier = consecutiveWrong === 1 ? 2.5 : (consecutiveWrong === 2 ? 4.5 : 7.0);
+        if (ans.activeDebuff === 'DOUBLE_DAMAGE') {
+          baseMultiplier *= 2.0;
+        }
+        
+        const multiplier = bossResurrected ? baseMultiplier * 1.5 : baseMultiplier;
+        energy -= step * multiplier;
+      }
+    });
+
+    return { 
+      rawEnergy: energy, 
+      progressiveWrongCount: wrongSum,
+      bossShieldActive: shieldActive,
+      correctStreak: currentStreak,
+      bossStunned: stunned
+    };
+  }, [isBoss, totalCount, answers, bossResurrected]);
+
+  const energyPosition = isBoss ? Math.max(0, Math.min(100, rawEnergy - energyOffset)) : 50;
   const tugOfWarX = totalCount > 0 ? (50 / totalCount) : 0;
-  const energyPosition = isBoss ? Math.max(0, Math.min(100, 50 + (correctCount * tugOfWarX) - (bossWrongCount * 3 * tugOfWarX))) : 50;
+
+  // ĐỒNG BỘ TRẠNG THÁI: Khi câu hỏi cuối cùng chạy xong kích hoạt tấm khiên cục bộ hiển thị Kết quả
+  useEffect(() => {
+    if (showResult === true) {
+      if (isBoss) {
+        if (executeBossExitWrapperRef.current) {
+          executeBossExitWrapperRef.current(energyPosition >= 50 ? 'win' : 'lose');
+        }
+      } else {
+        setLocalShowResult(true);
+      }
+    }
+  }, [showResult, isBoss, energyPosition]);
 
   const executeBossExitWrapperRef = React.useRef<((result: 'win'|'lose') => void) | null>(null);
   const bossExitExecutedRef = React.useRef(false);
@@ -313,6 +382,18 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     
     let timer: NodeJS.Timeout;
     if (energyPosition >= 100) {
+      if (!bossResurrected) {
+        setBossResurrected(true);
+        setEnergyOffset(rawEnergy - 40);
+        showAlert(
+          '🔥 BOSS TỨC GIẬN & HỒI SINH!',
+          'Tà thú Kanji bầm dập nhưng bỗng gầm lên giận dữ, biến hình sang dạng cuồng nộ và hồi phục 60% máu! Hãy cẩn thận, sát thương của nó bây giờ sẽ cực kỳ khủng khiếp!',
+          [{ text: 'Chiến đấu tiếp!' }],
+          'warning'
+        );
+        return;
+      }
+
       timer = setTimeout(() => {
         if (executeBossExitWrapperRef.current) executeBossExitWrapperRef.current('win');
       }, 800);
@@ -325,7 +406,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [isBoss, energyPosition, localHearts]);
+  }, [isBoss, energyPosition, localHearts, bossResurrected, rawEnergy, showAlert]);
 
 
   // Bộ lắng nghe chặn thao tác vuốt cạnh/bấm nút Back vật lý khi đang làm bài
@@ -378,7 +459,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
             shouldRefresh = true;
           }
 
-          if (nodeType === 'SRS_REVIEW') {
+          if (nodeType === 'SRS_REVIEW' || nodeType === 'REVIEW') {
             // Đối với node ôn tập, map answers thành results mảng điểm để đưa vào SM-2
             const results = answers.map(a => ({
               cardId: Number(a.wordId),
@@ -492,6 +573,8 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     setHeartDeductionPending(false);
     setIsOutOfHearts(false);
     setLocalShowResult(false); 
+    setBossResurrected(false);
+    setEnergyOffset(0);
     handleRetry(); 
   };
 
@@ -499,7 +582,9 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     navigationBlockedRef.current = true;
     try {
       const params: any = { materialId };
-      if (typeof currentNodeIndex !== 'undefined') params.completedNodeIndex = currentNodeIndex;
+      if (typeof currentNodeIndex !== 'undefined') {
+        params.completedNodeIndex = finalCanContinue ? currentNodeIndex + 1 : currentNodeIndex;
+      }
       if (sessionId) params.sessionId = Number(sessionId);
       (async () => {
         try {
@@ -511,14 +596,10 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         } catch (err) {
           console.warn('Failed to update streak before exit:', err);
         } finally {
-          if (navigation.canGoBack()) {
-            navigation.goBack();
-          } else {
-            navigation.navigate('MainTabs' as any, {
-              screen: 'StudyJourney',
-              params: params,
-            });
-          }
+          navigation.navigate('MainTabs' as any, {
+            screen: 'StudyJourney',
+            params: params,
+          });
         }
       })();
     } catch (err) {
@@ -534,6 +615,9 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     if (showResult || localShowResult) return;
     if (isBoss) {
       if (energyPosition >= 100) {
+        if (!bossResurrected) {
+          return;
+        }
         if (executeBossExitWrapperRef.current) executeBossExitWrapperRef.current('win');
         return;
       } else if (energyPosition <= 0 || localHearts <= 0) {
@@ -542,11 +626,51 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
       }
     }
     handleContinueQuestion();
-  }, [showResult, localShowResult, handleContinueQuestion, isBoss, energyPosition, localHearts]);
+  }, [showResult, localShowResult, handleContinueQuestion, isBoss, energyPosition, localHearts, bossResurrected]);
 
   const safeHandleContinue = React.useCallback(() => {
     handleContinue();
   }, [handleContinue]);
+
+  const handleCancelQuiz = useStableCallback(() => {
+    if (showResult || localShowResult) {
+      console.warn('🛑 Chặn hủy tự phát.');
+      return;
+    }
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Home');
+    }
+  });
+
+  const handlePressTile = useStableCallback((tileId: string) => {
+    if (currentWord && chosenTileIds.length >= currentWord.hiragana.length) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setChosenTileIds((prev: string[]) => [...prev, tileId]);
+  });
+
+  const handleRemoveTile = useStableCallback((tileId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setChosenTileIds((prev: string[]) => {
+      const index = prev.findIndex((id) => id === tileId);
+      if (index > -1) {
+        const next = [...prev];
+        next.splice(index, 1);
+        return next;
+      }
+      return prev;
+    });
+  });
+
+  const handleResetChosenTileIds = useStableCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setChosenTileIds([]);
+  });
+
+  const handleGameComplete = useStableCallback((_correct: boolean) => {
+    handleNextQuestion();
+  });
 
   if (isLoading) return <QuizLoadingState />;
   if (loadError) return <QuizErrorState error={loadError} onRetry={reloadQuiz} />;
@@ -608,6 +732,10 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         totalQuestionCount={totalCount}
         isBoss={isBoss}
         energyPosition={energyPosition}
+        bossShieldActive={bossShieldActive}
+        correctStreak={correctStreak}
+        bossStunned={bossStunned}
+        activeDebuff={activeDebuff}
         isCorrect={isCorrect}
         correctCount={correctCount}
         wrongCount={answers.filter(a => !a.isCorrect).length}
@@ -637,14 +765,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         pairAssignments={pairAssignments}
         isSubmitting={isSubmitting}
         
-        onCancel={showResult || localShowResult ? () => console.warn('🛑 Chặn hủy tự phát.') : () => {
-          // Kích hoạt beforeRemove để hiện popup xác nhận thoát
-          if (navigation.canGoBack()) {
-            navigation.goBack();
-          } else {
-            navigation.navigate('Home');
-          }
-        }}
+        onCancel={handleCancelQuiz}
         onCheckInputAnswer={checkInputAnswer}
         onVerifyScrambled={verifyScrambled}
         onHandleChoiceAnswer={handleChoiceAnswer}
@@ -652,30 +773,13 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         onSubmitMatchAnswer={submitMatchAnswer}
         isMatchComplete={isMatchComplete}
         matchScore={matchScore}
+        matchRoundScore={matchRoundScore}
         onResetMatchState={handleResetMatchState}
         onChangeInput={setInputValue}
         onSelectOption={setSelectedOption}
-        onPressTile={(tileId) => {
-          if (currentWord && chosenTileIds.length >= currentWord.hiragana.length) return;
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setChosenTileIds((prev: string[]) => [...prev, tileId]);
-        }}
-        onRemoveTile={(tileId) => {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setChosenTileIds((prev: string[]) => {
-            const index = prev.findIndex(id => id === tileId);
-            if (index > -1) {
-              const next = [...prev];
-              next.splice(index, 1);
-              return next;
-            }
-            return prev;
-          });
-        }}
-        onResetChosenTileIds={() => {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setChosenTileIds([]);
-        }}
+        onPressTile={handlePressTile}
+        onRemoveTile={handleRemoveTile}
+        onResetChosenTileIds={handleResetChosenTileIds}
         onSetSelectedLeftId={setSelectedLeftId}
         onSetSelectedRightId={setSelectedRightId}
         onSetMatchingContainerHeight={setMatchingContainerHeight}
@@ -688,10 +792,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         rightItemLayouts={rightItemLayouts}
         promptType={promptType}
         correctAnswer={correctAnswer}
-        onGameComplete={(_correct: boolean) => {
-          // MEMORY_CARD tự hoàn thành khi ghép hết cặp → chuyển sang câu tiếp theo
-          handleNextQuestion();
-        }}
+        onGameComplete={handleGameComplete}
       />
       <OutOfHeartsInterceptor
         isVisible={isOutOfHearts}

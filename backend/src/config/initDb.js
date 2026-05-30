@@ -66,11 +66,22 @@ const initDb = async () => {
                 repetition INT NOT NULL DEFAULT 0,
                 interval_days FLOAT NOT NULL DEFAULT 0,
                 easiness_factor FLOAT NOT NULL DEFAULT 2.5,
-                next_review_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                last_reviewed_at TIMESTAMP NULL,
+                next_review_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_reviewed_at DATETIME NULL,
                 PRIMARY KEY (user_id, flashcard_id)
             )`
         );
+
+        try {
+            await connection.query(
+                `ALTER TABLE user_srs_progress 
+                 MODIFY COLUMN next_review_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                 MODIFY COLUMN last_reviewed_at DATETIME NULL`
+            );
+            console.log('[initDb] Migrated user_srs_progress date columns to DATETIME');
+        } catch (err) {
+            console.warn('[initDb] Warning migrating user_srs_progress columns to DATETIME:', err.message);
+        }
 
         await connection.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS global_hearts INT NOT NULL DEFAULT 5`);
 

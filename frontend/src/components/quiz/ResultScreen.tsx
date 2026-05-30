@@ -569,6 +569,10 @@ export default function ResultScreen({
 
   const failedAnswers = answers.filter((ans) => !ans.isCorrect);
   const isMatchMode = answers.some(ans => ans.type === 'MATCH_HIRA' || ans.type === 'MATCH_MEANING');
+  const matchAnswers = answers.filter((ans) => ans.type === 'MATCH_HIRA' || ans.type === 'MATCH_MEANING');
+  const failedNonMatchAnswers = answers.filter(
+    (ans) => ans.type !== 'MATCH_HIRA' && ans.type !== 'MATCH_MEANING' && !ans.isCorrect
+  );
   const displayedScore = displayScore ?? score;
   const passedThreshold = canContinue;
   const canRetry = true;
@@ -633,56 +637,59 @@ export default function ResultScreen({
               <X size={18} color={colors.text} />
             </TouchableOpacity>
             <Text style={[styles.reviewTitle, { color: colors.text }]}>
-              {isMatchMode ? 'Đáp án đúng nối từ' : 'Danh sách câu sai'}
+              {matchAnswers.length > 0 && failedNonMatchAnswers.length === 0 ? 'Đáp án đúng nối từ' : 'Xem lại câu sai'}
             </Text>
             <View style={{ width: 42 }} />
           </View>
 
           {/* List Vocabulary cuộn phẳng chuyên nghiệp */}
-          {isMatchMode ? (
-            <ScrollView
-              style={styles.reviewListScroll}
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-            >
+          <ScrollView
+            style={styles.reviewListScroll}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            {matchAnswers.length > 0 && (
               <MatchingReview
-                answers={answers}
+                answers={matchAnswers}
                 colors={colors}
                 isDark={isDark}
               />
-            </ScrollView>
-          ) : (
-            <ScrollView
-              style={styles.reviewListScroll}
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-            >
-              {failedAnswers.map((item, idx) => (
-                <View key={`${item.word?.id}-${idx}`} style={[styles.listItem, { borderColor: isDark ? '#1E293B' : '#F1F5F9', backgroundColor: colors.card }]}>
-                  <Text style={[styles.listIndex, { color: themePrimaryColor }]}>{idx + 1}.</Text>
+            )}
 
-                  <View style={styles.listTextContainer}>
-                    <Text style={[styles.listText, { color: colors.text }]}>
-                      {item.word.kanji || item.word.hiragana || '—'}
-                    </Text>
-                    <Text style={[styles.listSubText, { color: colors.textSecondary }]}>
-                      {item.word.hiragana ? `${item.word.hiragana} — ` : ''}{item.word.meaning || 'Không có dữ liệu'}
-                    </Text>
+            {failedNonMatchAnswers.length > 0 && (
+              <View style={{ marginTop: matchAnswers.length > 0 ? 20 : 0 }}>
+                {matchAnswers.length > 0 && (
+                  <Text style={{ fontSize: 16, fontWeight: '900', color: colors.text, marginBottom: 12, marginTop: 10 }}>
+                    Các câu trả lời sai khác:
+                  </Text>
+                )}
+                {failedNonMatchAnswers.map((item, idx) => (
+                  <View key={`${item.word?.id}-${idx}`} style={[styles.listItem, { borderColor: isDark ? '#1E293B' : '#F1F5F9', backgroundColor: colors.card }]}>
+                    <Text style={[styles.listIndex, { color: themePrimaryColor }]}>{idx + 1}.</Text>
+
+                    <View style={styles.listTextContainer}>
+                      <Text style={[styles.listText, { color: colors.text }]}>
+                        {item.word.kanji || item.word.hiragana || '—'}
+                      </Text>
+                      <Text style={[styles.listSubText, { color: colors.textSecondary }]}>
+                        {item.word.hiragana ? `${item.word.hiragana} — ` : ''}{item.word.meaning || 'Không có dữ liệu'}
+                      </Text>
+                    </View>
+
+                    {item.word.hiragana && (
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => playSound(item.word.hiragana)}
+                        style={[styles.miniSoundBtn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}
+                      >
+                        <Volume2 size={16} color={themePrimaryColor} />
+                      </TouchableOpacity>
+                    )}
                   </View>
-
-                  {item.word.hiragana && (
-                    <TouchableOpacity
-                      activeOpacity={0.7}
-                      onPress={() => playSound(item.word.hiragana)}
-                      style={[styles.miniSoundBtn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}
-                    >
-                      <Volume2 size={16} color={themePrimaryColor} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
-            </ScrollView>
-          )}
+                ))}
+              </View>
+            )}
+          </ScrollView>
 
           {/* Nút quay lại đổ khối 3D */}
           <View style={[styles.btn3DWrapper, { marginTop: 12 }]}>

@@ -4,6 +4,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParamList } from '../components/AppNavigator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFlashcards, updateProgress, completeQuizNode, syncStudy } from '../api/api';
+import { useStableCallback } from '../hooks/useStableCallback';
 import type { QuizType, QuizWord, AnswerRecord } from '../components/quiz/types';
 import { chunkVocabulary } from '../utils/journeyMap';
 import { useGlobalUI } from '../context/GlobalUIContext';
@@ -11,12 +12,14 @@ import { useGlobalUI } from '../context/GlobalUIContext';
 const DEFAULT_DISTRACTORS: QuizWord[] = [
   { id: 'distractor-1', kanji: '先生', hiragana: 'せんせい', meaning: 'giáo viên' },
   { id: 'distractor-2', kanji: '学生', hiragana: 'がくせい', meaning: 'học sinh' },
-  { id: 'distractor-3', kanji: '友達', hiragana: 'ともだch', meaning: 'bạn bè' },
+  { id: 'distractor-3', kanji: '友達', hiragana: 'ともだち', meaning: 'bạn bè' },
   { id: 'distractor-4', kanji: '学校', hiragana: 'がっこう', meaning: 'trường học' },
   { id: 'distractor-5', kanji: '日本語', hiragana: 'にほんご', meaning: 'tiếng Nhật' },
   { id: 'distractor-6', kanji: '本', hiragana: 'ほん', meaning: 'sách' },
-  { id: 'distractor-7', kanji: '水', hiragana: 'mizu', meaning: 'nước' },
+  { id: 'distractor-7', kanji: '水', hiragana: 'みず', meaning: 'nước' },
   { id: 'distractor-8', kanji: 'お茶', hiragana: 'おちゃ', meaning: 'trà' },
+  { id: 'distractor-9', kanji: '今日', hiragana: 'きょう', meaning: 'hôm nay' },
+  { id: 'distractor-10', kanji: '明日', hiragana: 'あした', meaning: 'ngày mai' },
 ];
 
 const DEFAULT_MEANINGS = [
@@ -128,6 +131,7 @@ type UseQuizScreenResult = {
   submitMatchAnswer: () => void;
   isMatchComplete: boolean;
   matchScore: number;
+  matchRoundScore: number;
   currentMatchWords: QuizWord[];
   currentMatchRightItems: { id: string; label: string }[];
   remainingSeconds: number;
@@ -150,6 +154,7 @@ type UseQuizScreenResult = {
   proceedAfterReview: () => void;
   showMatchAnswers: () => void;
   isReviewComplete: boolean;
+  activeDebuff: 'DOUBLE_DAMAGE' | 'FREEZE' | null;
 };
 
 const PRACTICE_STEPS: QuizType[] = ['MATCH_HIRA', 'MATCH_MEANING', 'MULTIPLE_CHOICE', 'SCRAMBLED_HIRA', 'WRITE_HIRA'];
@@ -196,27 +201,31 @@ function buildMultipleChoiceOptions(word: QuizWord, pool: QuizWord[]) {
 }
 
 function buildFinalBossQuestions(words: QuizWord[], nodeType: string): QuizQuestion[] {
+  if (words.length === 0) return [];
+
   const isBoss = nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM';
-  const maxCount = isBoss ? 50 : 25;
-  const count = Math.min(maxCount, words.length);
+  const count = isBoss 
+    ? Math.max(10, Math.min(50, words.length)) 
+    : Math.min(25, words.length);
+
+  const shuffledWords = shuffle(words);
   const questions: QuizQuestion[] = [];
 
-  const createQuestion = (word: QuizWord): QuizQuestion => {
+  for (let index = 0; index < count; index++) {
+    const word = shuffledWords[index % shuffledWords.length];
+    const type: QuizType = 'MULTIPLE_CHOICE';
+
     const question: QuizQuestion = {
       word,
-      type: 'MULTIPLE_CHOICE',
+      type,
       batchIndex: 0,
+      options: buildMultipleChoiceOptions(word, words),
+      correctAnswer: word.meaning,
     };
-    question.options = buildMultipleChoiceOptions(word, words);
-    question.correctAnswer = word.meaning;
-    return question;
-  };
+    questions.push(question);
+  }
 
-  words.forEach((word) => {
-    questions.push(createQuestion(word));
-  });
-
-  return shuffle(questions).slice(0, count);
+  return questions;
 }
 
 function buildQuizQuestions(words: QuizWord[], quizStepType: QuizType, batchIndex: number): QuizQuestion[] {
@@ -368,7 +377,15 @@ export default function useQuizScreen({
   const [chosenTileIds, setChosenTileIds] = useState<string[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
   const effectiveQuizType: QuizType = quizStepType || PRACTICE_STEPS[currentStep] || 'MULTIPLE_CHOICE';
-  const [timerSeconds, setTimerSeconds] = useState(() => getTimerForType(effectiveQuizType));
+  const [timerSeconds, setTimerSeconds] = useState(() => {
+    let baseTimer = getTimerForType(effectiveQuizType);
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
+      if (effectiveQuizType === 'MULTIPLE_CHOICE') baseTimer = 5;
+      else if (effectiveQuizType === 'SCRAMBLED_HIRA') baseTimer = 12;
+      else if (effectiveQuizType === 'WRITE_HIRA') baseTimer = 12;
+    }
+    return baseTimer;
+  });
   const [isTimeUp, setIsTimeUp] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -381,6 +398,8 @@ export default function useQuizScreen({
   const [totalPairAttempts, setTotalPairAttempts] = useState(0);
   const [totalMatchedPairs, setTotalMatchedPairs] = useState(0);
   const [showWrongPairsReview, setShowWrongPairsReview] = useState(false);
+  const [accumulatedMatchAnswers, setAccumulatedMatchAnswers] = useState<AnswerRecord[]>([]);
+  const [activeDebuff, setActiveDebuff] = useState<'DOUBLE_DAMAGE' | 'FREEZE' | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoNextRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -463,7 +482,7 @@ export default function useQuizScreen({
   }, [words, nodeType, batchIndex]);
 
   const questions = useMemo(() => {
-    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'REVIEW' || nodeType === 'SRS_REVIEW') {
       return buildFinalBossQuestions(batchWords, nodeType);
     }
     // PRACTICE_2: Chế độ luyện tập đa dạng - random mix nhiều loại câu hỏi
@@ -473,33 +492,6 @@ export default function useQuizScreen({
     // PRACTICE_3: Ghép chữ & Gõ chữ mixed mode
     if (nodeType === 'PRACTICE_3') {
       return buildPractice3Questions(batchWords, batchIndex);
-    }
-    if (nodeType === 'REVIEW' || nodeType === 'SRS_REVIEW') {
-      const targetCount = Math.max(4, Math.min(25, batchWords.length * 2));
-      const qList: QuizQuestion[] = [];
-      const types: QuizType[] = ['MULTIPLE_CHOICE', 'TRUE_FALSE', 'WRITE_HIRA'];
-
-      while (qList.length < targetCount && batchWords.length > 0) {
-        for (const word of batchWords) {
-          if (qList.length >= targetCount) break;
-          const type = types[Math.floor(Math.random() * types.length)];
-          const question: QuizQuestion = { word, type, batchIndex: 0 };
-          if (type === 'MULTIPLE_CHOICE') {
-            question.options = buildMultipleChoiceOptions(word, batchWords);
-            question.correctAnswer = word.meaning;
-          } else if (type === 'TRUE_FALSE') {
-            const allMeanings = batchWords.filter(w => w.id !== word.id).map(w => w.meaning);
-            const shouldShowCorrect = Math.random() > 0.5;
-            const displayMeaning = shouldShowCorrect
-              ? word.meaning
-              : (allMeanings[Math.floor(Math.random() * allMeanings.length)] ?? word.meaning);
-            question.options = [displayMeaning];
-            question.correctAnswer = displayMeaning === word.meaning ? 'TRUE' : 'FALSE';
-          }
-          qList.push(question);
-        }
-      }
-      return shuffle(qList);
     }
     return buildQuizQuestions(batchWords, effectiveQuizType, batchIndex);
   }, [batchWords, effectiveQuizType, batchIndex, nodeType]);
@@ -531,24 +523,49 @@ export default function useQuizScreen({
     setHasSubmitted(false);
     setSelectedAnswer(null);
     setIsCorrect(null);
+    
     // Reset timer for the new question but preserve auto‑next countdown handling
     const currentQuestionType = questions[currentIndex]?.type || effectiveQuizType;
-    setTimerSeconds(getTimerForType(currentQuestionType));
+    let baseTimer = getTimerForType(currentQuestionType);
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
+      if (currentQuestionType === 'MULTIPLE_CHOICE') baseTimer = 5;
+      else if (currentQuestionType === 'SCRAMBLED_HIRA') baseTimer = 12;
+      else if (currentQuestionType === 'WRITE_HIRA') baseTimer = 12;
+    }
+
+    // Debuff Logic for Final Boss
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
+      const rand = Math.random();
+      if (rand < 0.25) {
+        const debuff = Math.random() < 0.5 ? 'DOUBLE_DAMAGE' : 'FREEZE';
+        setActiveDebuff(debuff);
+        if (debuff === 'FREEZE') {
+          baseTimer = 3;
+        }
+      } else {
+        setActiveDebuff(null);
+      }
+    } else {
+      setActiveDebuff(null);
+    }
+
+    setTimerSeconds(baseTimer);
     setFeedbackMessage(null);
     setIsSubmitting(false);
     setShowWrongPairsReview(false);
-  }, [currentIndex, questions, clearTimer, effectiveQuizType, clearAutoNextTimer]);
+  }, [currentIndex, questions, clearTimer, effectiveQuizType, clearAutoNextTimer, nodeType]);
 
   // CRITICAL FIX 2: Loại bỏ hàm completeQuiz chứa lệnh rẽ nhánh tự hủy goBack ngầm.
   // Tiến trình chuyển trang ra Map bây giờ sẽ do file cha QuizScreen điều phối 100%.
 
-  const handleSaveAnswer = useCallback(async (questionIndex: number, question: QuizQuestion, correct: boolean) => {
+  const handleSaveAnswer = useStableCallback(async (questionIndex: number, question: QuizQuestion, correct: boolean) => {
     const nextAnswers = [...answers];
     const answerRecord: AnswerRecord = {
       wordId: question.word.id,
       type: question.type,
       isCorrect: correct,
       word: question.word,
+      activeDebuff,
     };
 
     if (questionIndex < nextAnswers.length) {
@@ -565,9 +582,9 @@ export default function useQuizScreen({
       next[currentStep][questionIndex] = answerRecord;
       return next;
     });
-  }, [answers, currentStep]);
+  });
 
-  const handleCheck = useCallback(async (correct: boolean) => {
+  const handleCheck = useStableCallback(async (correct: boolean) => {
     const questionIndex = currentIndex;
     const question = questions[questionIndex];
     if (!question) return;
@@ -594,28 +611,24 @@ export default function useQuizScreen({
     } finally {
       setIsSubmitting(false);
     }
-  }, [currentIndex, questions, handleSaveAnswer, materialId, user?.id]);
+  });
 
-  const handleNextQuestion = useCallback(() => {
+  const handleNextQuestion = useStableCallback(() => {
     const totalCount = questions.length;
     if (currentIndex + 1 >= totalCount) {
-      if (nodeType === 'REVIEW' || nodeType === 'SRS_REVIEW') {
-        setIsReviewComplete(true);
-      } else {
-        setShowResult(true);
-      }
+      setShowResult(true);
       return;
     }
     setCurrentIndex((prev) => prev + 1);
-  }, [currentIndex, questions.length, nodeType]);
+  });
 
-  const reloadQuiz = useCallback(() => {
+  const reloadQuiz = useStableCallback(() => {
     setReloadToggle((prev) => !prev);
-  }, []);
+  });
 
-  const handleCancel = useCallback(() => {
+  const handleCancel = useStableCallback(() => {
     navigation.goBack();
-  }, [navigation]);
+  });
 
   const stepScore = useMemo(() => {
     const stepAns = stepAnswers[currentStep] || [];
@@ -629,7 +642,6 @@ export default function useQuizScreen({
   const currentWord = currentQuestion?.word ?? null;
   const activeType = currentQuestion?.type;
   const correctCount = answers.filter((item) => item.isCorrect).length;
-  const score = totalCount ? (correctCount / totalCount) * 100 : 0;
   const isBoss = nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM';
 
   const tiles = useMemo(() => {
@@ -739,7 +751,6 @@ export default function useQuizScreen({
   const totalMatchCount = matchWords.length;
   const isMatchComplete = isMatchMode && currentMatchWords.length > 0 && Object.keys(pairAssignments).length === currentMatchWords.length;
   const currentBatchMatchScore = pairAttempts === 0 ? 0 : Math.round((matchedIds.size / pairAttempts) * 100);
-  const overallMatchScore = totalPairAttempts === 0 ? 0 : Math.round((totalMatchedPairs / totalPairAttempts) * 100);
 
   const isTimerRunning = !isLoading && !showResult && isCorrect === null && !hasSubmitted;
 
@@ -764,7 +775,7 @@ export default function useQuizScreen({
     };
   }, [isTimerRunning, clearTimer, currentIndex]);
 
-  const handleCheckAnswer = useCallback(async (correct: boolean, answer: string | null) => {
+  const handleCheckAnswer = useStableCallback(async (correct: boolean, answer: string | null) => {
     if (hasSubmitted) return;
 
     clearTimer();
@@ -774,7 +785,7 @@ export default function useQuizScreen({
     setFeedbackMessage((prev) => prev || (timerSeconds === 0 ? 'Hết giờ!' : null));
 
     await handleCheck(correct);
-  }, [clearTimer, handleCheck, hasSubmitted, timerSeconds]);
+  });
 
   const evaluateMatchRound = useCallback(
     async (force = false) => {
@@ -810,12 +821,28 @@ export default function useQuizScreen({
       const hasErrors = nextWrongPairs.size > 0;
       const passed = score >= 80;
 
+      const roundAnswers: AnswerRecord[] = currentMatchWords.map((leftWord) => {
+        const rightId = pairAssignments[leftWord.id];
+        const rightWord = currentMatchWords.find((word) => word.id === rightId);
+        const isMatched = rightWord
+          ? activeType === 'MATCH_HIRA'
+            ? leftWord.hiragana === rightWord.hiragana
+            : leftWord.meaning === rightWord.meaning
+          : false;
+        return {
+          wordId: leftWord.id,
+          type: activeType || 'MATCH_HIRA',
+          isCorrect: isMatched,
+          word: leftWord,
+          userRightId: rightId || undefined,
+        };
+      });
+
       if (hasErrors) {
         const nextAttempts = matchAttempts + 1;
         setMatchAttempts(nextAttempts);
 
-        if (nextAttempts >= 3) {
-          // nextAttempts >= 3
+        if (nextAttempts >= 3 || force) {
           let remainingHearts = -1;
           if (deductHeartOnFailure) {
             try {
@@ -824,12 +851,10 @@ export default function useQuizScreen({
               console.warn('Lỗi trừ tim khi nối sai:', err);
             }
           }
-          // Only show alert if hearts are NOT depleted to avoid
-          // two Modal components stacking (OutOfHeartsInterceptor handles 0 hearts)
           if (remainingHearts > 0 || remainingHearts === -1) {
             showAlert(
               'Thông báo',
-              'Bạn đã nối sai 3 lần! Bạn bị trừ 1 tim.',
+              force ? 'Hết giờ!' : 'Bạn đã nối sai 3 lần! Bạn bị trừ 1 tim.',
               [{ text: 'OK' }],
               'warning'
             );
@@ -839,6 +864,12 @@ export default function useQuizScreen({
           setMatchedIds(nextMatchedIds);
           setMatchRoundScore(score);
           setIsCorrect(passed);
+
+          // Save round answers to accumulatedMatchAnswers
+          setAccumulatedMatchAnswers((prev) => {
+            const filtered = prev.filter(p => !currentMatchWords.some(w => w.id === p.wordId));
+            return [...filtered, ...roundAnswers];
+          });
           return;
         }
 
@@ -869,16 +900,22 @@ export default function useQuizScreen({
         setIsCorrect(passed);
         setFeedbackMessage(passed ? 'Đạt yêu cầu!' : 'Chưa đạt 80%, làm lại đợt này nhé.');
 
+        // Save round answers to accumulatedMatchAnswers
+        setAccumulatedMatchAnswers((prev) => {
+          const filtered = prev.filter(p => !currentMatchWords.some(w => w.id === p.wordId));
+          return [...filtered, ...roundAnswers];
+        });
+
         if (passed && matchRound === matchRoundCount - 1) {
           handleCheckAnswer(true, 'MATCH_COMPLETE');
         }
       }
     },
-    [activeType, currentMatchWords, isMatchComplete, pairAssignments, handleCheckAnswer, matchRound, matchRoundCount, matchAttempts, deductHeartOnFailure, showAlert, hasSubmitted],
+    [activeType, currentMatchWords, isMatchComplete, pairAssignments, handleCheckAnswer, matchRound, matchRoundCount, matchAttempts, deductHeartOnFailure, showAlert, hasSubmitted, setAccumulatedMatchAnswers],
   );
 
 
-  const handleTimerExpire = useCallback(async () => {
+  const handleTimerExpire = useStableCallback(async () => {
     if (!isTimerRunning || hasSubmitted) return;
 
     setIsTimeUp(true);
@@ -917,39 +954,15 @@ export default function useQuizScreen({
       default:
         await handleCheckAnswer(false, null);
     }
-  }, [currentQuestion, evaluateMatchRound, handleCheckAnswer, isMatchMode, isTimerRunning, hasSubmitted, inputValue, selectedOption, selectedScrambledChars]);
+  });
 
   useEffect(() => {
     if (timerSeconds !== 0 || !isTimerRunning) return;
     handleTimerExpire();
   }, [handleTimerExpire, isTimerRunning, timerSeconds]);
 
-  useEffect(() => {
-    clearAutoNextTimer();
 
-    // CRITICAL FIX 3: Ngăn chặn bộ hẹn giờ đếm ngược chạy ngầm khi màn hình kết quả đã mở ra
-    if (isCorrect === null || showResult || isMatchMode) {
-      return;
-    }
-
-    setAutoNextCountdown(3);
-    autoNextRef.current = setInterval(() => {
-      setAutoNextCountdown((prev) => {
-        if (prev <= 1) {
-          clearAutoNextTimer();
-          handleNextQuestion();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => {
-      clearAutoNextTimer();
-    };
-  }, [isCorrect, showResult, isMatchMode, handleNextQuestion, clearAutoNextTimer, currentIndex]);
-
-  const resetCurrentMatchBatch = useCallback(() => {
+  const resetCurrentMatchBatch = useStableCallback(() => {
     setMatchedIds(new Set());
     setWrongPairs(new Set());
     setWrongPair(false);
@@ -966,9 +979,9 @@ export default function useQuizScreen({
     setFeedbackMessage(null);
     const currentQuestionType = questions[currentIndex]?.type || effectiveQuizType;
     setTimerSeconds(getTimerForType(currentQuestionType));
-  }, [effectiveQuizType, questions, currentIndex]);
+  });
 
-  const resetMatchStateForQuestion = useCallback(() => {
+  const resetMatchStateForQuestion = useStableCallback(() => {
     setMatchRound(0);
     setMatchedIds(new Set());
     setWrongPairs(new Set());
@@ -986,25 +999,50 @@ export default function useQuizScreen({
     setSelectedLeftId(null);
     setSelectedRightId(null);
     setFeedbackMessage(null);
+    setAccumulatedMatchAnswers([]);
     const currentQuestionType = questions[currentIndex]?.type || effectiveQuizType;
     setTimerSeconds(getTimerForType(currentQuestionType));
-  }, [effectiveQuizType, questions, currentIndex]);
+  });
 
-  const proceedAfterReview = useCallback(() => {
+  const saveAccumulatedMatchAnswers = useStableCallback(() => {
+    setAnswers((prev) => {
+      const nextAnswers = [...prev];
+      if (currentIndex < nextAnswers.length) {
+        nextAnswers.splice(currentIndex, 1);
+      }
+      nextAnswers.splice(currentIndex, 0, ...accumulatedMatchAnswers);
+      return nextAnswers;
+    });
+
+    setStepAnswers((prev) => {
+      const next = [...prev];
+      if (!next[currentStep]) next[currentStep] = [];
+      const nextStepAns = [...next[currentStep]];
+      if (currentIndex < nextStepAns.length) {
+        nextStepAns.splice(currentIndex, 1);
+      }
+      nextStepAns.splice(currentIndex, 0, ...accumulatedMatchAnswers);
+      next[currentStep] = nextStepAns;
+      return next;
+    });
+  });
+
+  const proceedAfterReview = useStableCallback(() => {
     setShowWrongPairsReview(false);
     if (isCorrect) {
       if (matchRound + 1 < matchRoundCount) {
         setMatchRound((prev) => prev + 1);
         resetCurrentMatchBatch();
       } else {
+        saveAccumulatedMatchAnswers();
         setShowResult(true);
       }
     } else {
       resetMatchStateForQuestion();
     }
-  }, [isCorrect, matchRound, matchRoundCount, resetCurrentMatchBatch, resetMatchStateForQuestion]);
+  });
 
-  const handleContinueQuestion = useCallback(async (skipReview?: boolean | any) => {
+  const handleContinueQuestion = useStableCallback(async (skipReview?: boolean | any) => {
     const shouldSkipReview = skipReview === true;
 
     if (isMatchMode && hasSubmitted) {
@@ -1019,23 +1057,19 @@ export default function useQuizScreen({
           resetCurrentMatchBatch();
           return;
         }
-        if (currentQuestion) {
-          await handleSaveAnswer(currentIndex, currentQuestion, true);
-        }
+        saveAccumulatedMatchAnswers();
         setShowResult(true);
         return;
       }
 
-      if (currentQuestion) {
-        await handleSaveAnswer(currentIndex, currentQuestion, false);
-      }
+      saveAccumulatedMatchAnswers();
       setShowResult(true);
       return;
     }
     handleNextQuestion();
-  }, [currentIndex, currentQuestion, handleNextQuestion, handleSaveAnswer, hasSubmitted, isCorrect, isMatchMode, matchRound, matchRoundCount, resetCurrentMatchBatch, wrongPairs.size]);
+  });
 
-  const handleRetry = useCallback(() => {
+  const handleRetry = useStableCallback(() => {
     setCurrentIndex(0);
     setAnswers([]);
     setShowResult(false);
@@ -1048,39 +1082,52 @@ export default function useQuizScreen({
       next[currentStep] = [];
       return next;
     });
-  }, [currentStep, resetMatchStateForQuestion]);
+  });
 
 
-  const matchScore = matchRoundScore;
+  const overallMatchScore = useMemo(() => {
+    const total = matchWords.length;
+    if (total === 0) return 0;
+    const correct = accumulatedMatchAnswers.filter(a => a.isCorrect).length;
+    return Math.round((correct / total) * 100);
+  }, [matchWords, accumulatedMatchAnswers]);
+
+  const score = isMatchMode
+    ? overallMatchScore
+    : (totalCount ? (correctCount / totalCount) * 100 : 0);
+
+  const matchScore = overallMatchScore;
   const displayScore = isMatchMode ? matchScore : stepScore;
-  const resultCorrectCount = isMatchMode ? matchedIds.size : correctCount;
-  const resultTotalCount = isMatchMode ? currentMatchWords.length : totalCount;
+  const resultCorrectCount = isMatchMode
+    ? accumulatedMatchAnswers.filter(a => a.isCorrect).length
+    : correctCount;
+  const resultTotalCount = isMatchMode ? matchWords.length : totalCount;
 
-  const submitMatchAnswer = useCallback(() => {
+  const submitMatchAnswer = useStableCallback(() => {
     evaluateMatchRound(false);
-  }, [evaluateMatchRound]);
+  });
 
-  const checkInputAnswer = useCallback(() => {
+  const checkInputAnswer = useStableCallback(() => {
     if (!currentWord?.hiragana) return;
     const answer = inputValue.trim();
     const isCorrectAnswer = answer.toLowerCase() === currentWord.hiragana.toLowerCase();
     handleCheckAnswer(isCorrectAnswer, answer);
-  }, [currentWord, inputValue, handleCheckAnswer]);
+  });
 
-  const verifyScrambled = useCallback(() => {
+  const verifyScrambled = useStableCallback(() => {
     if (!currentWord?.hiragana) return;
     const answer = selectedScrambledChars.join('');
     handleCheckAnswer(answer === currentWord.hiragana, answer);
-  }, [currentWord, selectedScrambledChars, handleCheckAnswer]);
+  });
 
-  const handleChoiceAnswer = useCallback(() => {
+  const handleChoiceAnswer = useStableCallback(() => {
     if (!currentQuestion) return;
     // Sử dụng correctAnswer nếu có, ngược lại fallback về meaning của từ hiện tại
     const correct = currentQuestion.correctAnswer ?? currentWord?.meaning ?? '';
     handleCheckAnswer(selectedOption === correct, selectedOption);
-  }, [currentQuestion, currentWord, selectedOption, handleCheckAnswer]);
+  });
 
-  const handlePairSelection = useCallback(
+  const handlePairSelection = useStableCallback(
     (leftId: string, rightId: string) => {
       if (hasSubmitted || wrongPairs.size > 0) return;
 
@@ -1104,16 +1151,15 @@ export default function useQuizScreen({
       setWrongPair(false);
       setSelectedLeftId(null);
       setSelectedRightId(null);
-    },
-    [currentMatchWords, pairAssignments, pairedRightIds, hasSubmitted, wrongPairs.size],
+    }
   );
 
-  const handleResetMatchState = useCallback(() => {
+  const handleResetMatchState = useStableCallback(() => {
     resetMatchStateForQuestion();
     setIsCorrect(null);
-  }, [resetMatchStateForQuestion]);
+  });
 
-  const showMatchAnswers = useCallback(() => {
+  const showMatchAnswers = useStableCallback(() => {
     const correctAssignments: Record<string, string> = {};
     const correctIds = new Set<string>();
 
@@ -1126,12 +1172,12 @@ export default function useQuizScreen({
     setWrongPairs(new Set());
     setMatchedIds(correctIds);
     setHasSubmitted(true);
-  }, [currentMatchWords]);
+  });
 
   // CRITICAL FIX 4: Thay đổi cơ chế chuyển Step. Khi hoàn thành toàn bộ bài,
   // hook CHỈ làm duy nhất một việc là chuyển trạng thái showResult sang TRUE.
   // Tuyệt đối không tự kích hoạt navigation sang màn hình khác.
-  const handleContinue = useCallback(async () => {
+  const handleContinue = useStableCallback(async () => {
     const threshold = isMatchMode ? 70 : 80;
     if (!quizStepType && currentStep < PRACTICE_STEPS.length - 1 && stepScore < threshold) {
       return;
@@ -1164,7 +1210,7 @@ export default function useQuizScreen({
       // Khi học xong bài test cuối cùng, gán biến cờ kết quả để file cha xử lý
       setShowResult(true);
     }
-  }, [quizStepType, currentStep, answers, questions.length, stepScore, user?.id, materialId, currentNodeIndex, sessionId, isMatchMode, matchScore]);
+  });
 
   const multipleChoiceOptions = useMemo(() => {
     if (!currentQuestion) return [];
@@ -1240,6 +1286,7 @@ export default function useQuizScreen({
     submitMatchAnswer,
     isMatchComplete,
     matchScore,
+    matchRoundScore,
     wrongPairs,
     pairAssignments,
     checkInputAnswer,
@@ -1255,5 +1302,6 @@ export default function useQuizScreen({
     proceedAfterReview,
     showMatchAnswers,
     isReviewComplete,
+    activeDebuff,
   };
 }

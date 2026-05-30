@@ -27,6 +27,7 @@ export type AnswerRecord = {
   userRightId?: string;
   rightItemsOrder?: { id: string; label: string }[];
   leftItemsOrder?: QuizWord[];
+  activeDebuff?: 'DOUBLE_DAMAGE' | 'FREEZE' | null;
 };
 
 export type QuizQuestion = {

@@ -233,37 +233,11 @@ const deductHeartOnFailure = useCallback(async (): Promise<number> => {
     return new Date(date).toLocaleDateString('en-CA');
   };
 
-  const restoreHeartsForNewDay = async (userId: number, currentDate: string, currentHearts: number) => {
-    if (currentHearts >= 5) return;
-    try {
-      await refillHearts(userId, 5, 0);
-      setGlobalHearts(5);
-    } catch (e) {
-      console.warn('Failed to restore hearts for new day:', e);
-      setGlobalHearts(5);
-    }
-  };
-
   const refreshUserStats = async () => {
     if (!user) return;
     try {
       const stats = await getUserStats(user.id);
       console.log('📊 Refreshed user stats:', stats);
-
-      const dbLastDateRaw = stats.last_study_date || null;
-      const currentDate = getLocalDateString(new Date());
-      const dbLastDate = dbLastDateRaw ? getLocalDateString(dbLastDateRaw) : null;
-
-      // Chỉ restore tim 1 lần duy nhất mỗi ngày trong phiên này
-      const alreadyRestoredToday = heartsRestoredRef.current === currentDate;
-
-      if (dbLastDate && dbLastDate < currentDate && !alreadyRestoredToday && (stats.global_hearts ?? 0) < 5) {
-        console.log('🌅 New day detected - restoring hearts for new day');
-        heartsRestoredRef.current = currentDate;
-        await restoreHeartsForNewDay(user.id, currentDate, stats.global_hearts ?? 0);
-        stats.global_hearts = 5;
-      }
-
       setGamificationState(stats);
     } catch (e) {
       console.warn('Failed to refresh user stats:', e);
