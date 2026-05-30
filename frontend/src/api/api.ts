@@ -53,18 +53,47 @@ const getCacheKeyForPath = (path: string): string | null => {
     const userId = parts[parts.length - 1];
     return `notifications:${userId}`;
   }
+  if (path.startsWith('/api/home/') && path.endsWith('/wrong-words')) {
+    const parts = path.split('/');
+    const userId = parts[parts.length - 2];
+    return `homeWrongWords:${userId}`;
+  }
+  if (path.startsWith('/api/study/journey/')) {
+    const cleanPath = path.split('?')[0];
+    const parts = cleanPath.split('/');
+    const materialId = parts[parts.length - 1];
+    return `studyJourney:${materialId}`;
+  }
   return null;
+};
+
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutMs = 5000): Promise<Response> => {
+  const controller = new AbortController();
+  const { signal } = controller;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { ...options, signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new TypeError('Failed to fetch (timeout)');
+    }
+    throw error;
+  }
 };
 
 const syncRequest = async (path: string, options: any) => {
   const url = `${BACKEND_URL}${path}`;
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
     ...options,
-  });
+  }, 5000);
   const data = await parseJson(response);
   if (!response.ok) {
     throw new Error(data?.error || `Sync request failed ${response.status}`);
@@ -87,13 +116,13 @@ const request = async (path: string, options: RequestInit = {}) => {
   if (method === 'GET') {
     try {
       const url = `${BACKEND_URL}${path}`;
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         headers: {
           'Content-Type': 'application/json',
           ...(options.headers || {}),
         },
         ...options,
-      });
+      }, 5000);
       const data = await parseJson(response);
       if (!response.ok) {
         throw new Error(data?.error || `Request failed ${response.status}`);
@@ -121,13 +150,13 @@ const request = async (path: string, options: RequestInit = {}) => {
   } else {
     try {
       const url = `${BACKEND_URL}${path}`;
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         headers: {
           'Content-Type': 'application/json',
           ...(options.headers || {}),
         },
         ...options,
-      });
+      }, 5000);
       const data = await parseJson(response);
       if (!response.ok) {
         throw new Error(data?.error || `Request failed ${response.status}`);
@@ -142,6 +171,8 @@ const request = async (path: string, options: RequestInit = {}) => {
       const isNetworkError = error.message?.includes('Network request failed') || 
                              error.message?.includes('Failed to fetch') ||
                              error.message?.includes('connection') ||
+                             error.message?.includes('timeout') ||
+                             error.name === 'AbortError' ||
                              error instanceof TypeError;
       
       if (isNetworkError) {

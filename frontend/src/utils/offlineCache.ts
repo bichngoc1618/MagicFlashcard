@@ -223,8 +223,8 @@ async function updateLocalCacheOptimistically(path: string, method: string, body
       }
     }
     
-    // 7. Mark Learned (POST /api/progress/mark-learned)
-    else if (path === '/api/progress/mark-learned' && method === 'POST') {
+    // 7. Mark Learned (POST /api/progress/mark-learned or POST /api/progress/update)
+    else if ((path === '/api/progress/mark-learned' || path === '/api/progress/update') && method === 'POST') {
       const { userId, materialId, flashcardId } = body;
       const key = `learnedCards:${userId}:${materialId}`;
       const cached = await getCachedData(key);
@@ -269,6 +269,14 @@ async function updateLocalCacheOptimistically(path: string, method: string, body
         cached.last_study_date = newLastStudyDate;
         await setCachedData(key, cached);
       }
+      const profileKey = `profile:${userId}`;
+      const cachedProfile = await getCachedData(profileKey);
+      if (cachedProfile) {
+        cachedProfile.total_xp = (cachedProfile.total_xp || 0) + earnedXp;
+        cachedProfile.streak_count = newStreakCount;
+        cachedProfile.last_study_date = newLastStudyDate;
+        await setCachedData(profileKey, cachedProfile);
+      }
     }
     
     // 11. Refill Hearts (POST /api/gamification/refill)
@@ -281,6 +289,13 @@ async function updateLocalCacheOptimistically(path: string, method: string, body
         cached.total_xp = Math.max((cached.total_xp || 0) - cost, 0);
         await setCachedData(key, cached);
       }
+      const profileKey = `profile:${userId}`;
+      const cachedProfile = await getCachedData(profileKey);
+      if (cachedProfile) {
+        cachedProfile.global_hearts = Math.min((cachedProfile.global_hearts || 0) + hearts, 5);
+        cachedProfile.total_xp = Math.max((cachedProfile.total_xp || 0) - cost, 0);
+        await setCachedData(profileKey, cachedProfile);
+      }
     }
     
     // 12. Deduct Hearts (POST /api/gamification/deduct)
@@ -291,6 +306,60 @@ async function updateLocalCacheOptimistically(path: string, method: string, body
       if (cached) {
         cached.global_hearts = Math.max((cached.global_hearts || 0) - amount, 0);
         await setCachedData(key, cached);
+      }
+      const profileKey = `profile:${userId}`;
+      const cachedProfile = await getCachedData(profileKey);
+      if (cachedProfile) {
+        cachedProfile.global_hearts = Math.max((cachedProfile.global_hearts || 0) - amount, 0);
+        await setCachedData(profileKey, cachedProfile);
+      }
+    }
+
+    // 13. Complete Quiz/Node (POST /api/progress/complete-quiz or POST /api/quiz/complete-node)
+    else if ((path === '/api/progress/complete-quiz' || path === '/api/quiz/complete-node') && method === 'POST') {
+      const { userId, materialId, isAlreadyCompleted } = body;
+      if (!isAlreadyCompleted) {
+        const key = `studyPath:${userId}:${materialId}`;
+        const cached = await getCachedData(key);
+        if (cached) {
+          cached.currentActiveNodeIndex = (cached.currentActiveNodeIndex || 0) + 1;
+          await setCachedData(key, cached);
+        }
+      }
+    }
+
+    // 14. Complete Flashcard Batch (POST /api/flashcard/complete)
+    else if (path === '/api/flashcard/complete' && method === 'POST') {
+      const { userId, materialId, batchIndex, isAlreadyCompleted } = body;
+      if (!isAlreadyCompleted) {
+        const key = `studyPath:${userId}:${materialId}`;
+        const cached = await getCachedData(key);
+        if (cached) {
+          cached.currentActiveNodeIndex = (cached.currentActiveNodeIndex || 0) + 1;
+          await setCachedData(key, cached);
+        }
+      }
+
+      const flashcardsKey = `flashcards:${materialId}`;
+      const flashcardsCached = await getCachedData(flashcardsKey);
+      if (flashcardsCached && Array.isArray(flashcardsCached.flashcards)) {
+        const chunks = [];
+        const list = flashcardsCached.flashcards;
+        for (let i = 0; i < list.length; i += 10) {
+          chunks.push(list.slice(i, i + 10));
+        }
+        const batch = chunks[batchIndex] || [];
+        const cardIds = batch.map((c: any) => String(c.id));
+
+        const learnedKey = `learnedCards:${userId}:${materialId}`;
+        const cachedLearned = await getCachedData(learnedKey);
+        const learnedIds = cachedLearned && Array.isArray(cachedLearned.learnedCardIds) ? cachedLearned.learnedCardIds : [];
+        cardIds.forEach((id: string) => {
+          if (!learnedIds.includes(id)) {
+            learnedIds.push(id);
+          }
+        });
+        await setCachedData(learnedKey, { learnedCardIds: learnedIds });
       }
     }
   } catch (e) {
