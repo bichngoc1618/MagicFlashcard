@@ -1190,27 +1190,33 @@ export const completeSrsReview = async (req, res) => {
       return res.status(400).json({ error: 'Thiếu tham số.' });
     }
 
-    for (const resItem of results) {
-      const { cardId, score } = resItem;
-      const quality = mapScoreToQuality(score);
+    const promises = results.map(async (resItem) => {
+      try {
+        const { cardId, score } = resItem;
+        const quality = mapScoreToQuality(score);
 
-      const [rows] = await db.query(
-        'SELECT repetition, interval_days, easiness_factor FROM user_srs_progress WHERE user_id = ? AND flashcard_id = ?',
-        [userId, cardId]
-      );
-
-      if (rows.length > 0) {
-        const currentSrs = rows[0];
-        const next = calculateNextReview(quality, currentSrs.repetition, currentSrs.easiness_factor, currentSrs.interval_days);
-
-        await db.query(
-          `UPDATE user_srs_progress 
-           SET repetition = ?, interval_days = ?, easiness_factor = ?, next_review_date = ?, last_reviewed_at = NOW()
-           WHERE user_id = ? AND flashcard_id = ?`,
-          [next.repetition, next.interval, next.easiness, next.nextReviewDate, userId, cardId]
+        const [rows] = await db.query(
+          'SELECT repetition, interval_days, easiness_factor FROM user_srs_progress WHERE user_id = ? AND flashcard_id = ?',
+          [userId, cardId]
         );
+
+        if (rows.length > 0) {
+          const currentSrs = rows[0];
+          const next = calculateNextReview(quality, currentSrs.repetition, currentSrs.easiness_factor, currentSrs.interval_days);
+
+          await db.query(
+            `UPDATE user_srs_progress 
+             SET repetition = ?, interval_days = ?, easiness_factor = ?, next_review_date = ?, last_reviewed_at = NOW()
+             WHERE user_id = ? AND flashcard_id = ?`,
+            [next.repetition, next.interval, next.easiness, next.nextReviewDate, userId, cardId]
+          );
+        }
+      } catch (err) {
+        console.error(`Error updating SRS progress for cardId ${resItem.cardId}:`, err);
       }
-    }
+    });
+
+    await Promise.all(promises);
     
     const xpReward = results.length * 5;
     await db.query('UPDATE users SET total_xp = total_xp + ? WHERE id = ?', [xpReward, userId]);
