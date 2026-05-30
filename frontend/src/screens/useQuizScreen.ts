@@ -155,6 +155,8 @@ type UseQuizScreenResult = {
   showMatchAnswers: () => void;
   isReviewComplete: boolean;
   activeDebuff: 'DOUBLE_DAMAGE' | 'FREEZE' | null;
+  initialTotalCount: number;
+  handleCheckAnswer: (correct: boolean, answer: string | null) => Promise<void> | void;
 };
 
 const PRACTICE_STEPS: QuizType[] = ['MATCH_HIRA', 'MATCH_MEANING', 'MULTIPLE_CHOICE', 'SCRAMBLED_HIRA', 'WRITE_HIRA'];
@@ -173,6 +175,8 @@ function getTimerForType(type: QuizType): number {
       return 20;
     case 'WRITE_HIRA':
       return 20;
+    case 'MEMORY_CARD':
+      return 25;
     default:
       return 20;
   }
@@ -200,29 +204,40 @@ function buildMultipleChoiceOptions(word: QuizWord, pool: QuizWord[]) {
   return shuffle([word.meaning, ...selectedDistractors]);
 }
 
+function buildBossQuestion(word: QuizWord, type: QuizType, pool: QuizWord[]): QuizQuestion {
+  const question: QuizQuestion = {
+    word,
+    type,
+    batchIndex: 0,
+  };
+  if (type === 'MULTIPLE_CHOICE' || type === 'LISTENING') {
+    question.options = buildMultipleChoiceOptions(word, pool);
+    question.correctAnswer = word.meaning;
+    question.promptType = type === 'LISTENING' ? 'hira_to_meaning' : 'kanji_to_meaning';
+  } else if (type === 'MEMORY_CARD') {
+    const otherWords = shuffle(pool.filter((w) => w.id !== word.id));
+    const selectedDistractors = otherWords.slice(0, 3);
+    question.pool = shuffle([word, ...selectedDistractors]);
+  }
+  return question;
+}
+
 function buildFinalBossQuestions(words: QuizWord[], nodeType: string): QuizQuestion[] {
   if (words.length === 0) return [];
 
-  const isBoss = nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM';
+  const isBoss = nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'REVIEW';
   const count = isBoss 
     ? Math.max(10, Math.min(50, words.length)) 
     : Math.min(25, words.length);
 
   const shuffledWords = shuffle(words);
   const questions: QuizQuestion[] = [];
+  const quizTypes: QuizType[] = ['MULTIPLE_CHOICE', 'LISTENING', 'SCRAMBLED_HIRA', 'MEMORY_CARD'];
 
   for (let index = 0; index < count; index++) {
     const word = shuffledWords[index % shuffledWords.length];
-    const type: QuizType = 'MULTIPLE_CHOICE';
-
-    const question: QuizQuestion = {
-      word,
-      type,
-      batchIndex: 0,
-      options: buildMultipleChoiceOptions(word, words),
-      correctAnswer: word.meaning,
-    };
-    questions.push(question);
+    const type = quizTypes[index % quizTypes.length];
+    questions.push(buildBossQuestion(word, type, words));
   }
 
   return questions;
@@ -379,10 +394,11 @@ export default function useQuizScreen({
   const effectiveQuizType: QuizType = quizStepType || PRACTICE_STEPS[currentStep] || 'MULTIPLE_CHOICE';
   const [timerSeconds, setTimerSeconds] = useState(() => {
     let baseTimer = getTimerForType(effectiveQuizType);
-    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'REVIEW') {
       if (effectiveQuizType === 'MULTIPLE_CHOICE') baseTimer = 5;
       else if (effectiveQuizType === 'SCRAMBLED_HIRA') baseTimer = 12;
       else if (effectiveQuizType === 'WRITE_HIRA') baseTimer = 12;
+      else if (effectiveQuizType === 'MEMORY_CARD') baseTimer = 25;
     }
     return baseTimer;
   });
@@ -464,8 +480,16 @@ export default function useQuizScreen({
   const batchWords = useMemo<QuizWord[]>(() => {
     if (words.length === 0) return [];
 
-    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'SRS_REVIEW') {
-      return shuffle(words).slice(0, Math.min(words.length, 50));
+    // For final boss/exam, include all words in the chunks studied so far (up to batchIndex)
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
+      const chunks = chunkVocabulary(words as any);
+      const studiedChunks = chunks.slice(0, batchIndex + 1);
+      const studiedWords = studiedChunks.flat() as QuizWord[];
+      let learnedWords = studiedWords.filter(w => w.is_learned === 1);
+      if (learnedWords.length === 0) {
+        learnedWords = studiedWords; // Fallback to all studied words if none are marked learned
+      }
+      return shuffle(learnedWords).slice(0, Math.min(learnedWords.length, 50));
     }
 
     if (nodeType === 'REVIEW') {
@@ -473,7 +497,15 @@ export default function useQuizScreen({
       const prevChunk = batchIndex > 0 ? chunks[batchIndex - 1] || [] : [];
       const currentChunk = chunks[batchIndex] || [];
       const combined = [...prevChunk, ...currentChunk] as QuizWord[];
-      return shuffle(combined).slice(0, Math.min(combined.length, 25));
+      let learnedWords = combined.filter(w => w.is_learned === 1);
+      if (learnedWords.length === 0) {
+        learnedWords = combined; // Fallback
+      }
+      return shuffle(learnedWords).slice(0, Math.min(learnedWords.length, 25));
+    }
+
+    if (nodeType === 'SRS_REVIEW') {
+      return words;
     }
 
     const chunks = chunkVocabulary(words as any);
@@ -481,7 +513,8 @@ export default function useQuizScreen({
     return chunk as QuizWord[];
   }, [words, nodeType, batchIndex]);
 
-  const questions = useMemo(() => {
+  const initialQuestions = useMemo(() => {
+    if (words.length === 0) return [];
     if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'REVIEW' || nodeType === 'SRS_REVIEW') {
       return buildFinalBossQuestions(batchWords, nodeType);
     }
@@ -494,7 +527,17 @@ export default function useQuizScreen({
       return buildPractice3Questions(batchWords, batchIndex);
     }
     return buildQuizQuestions(batchWords, effectiveQuizType, batchIndex);
-  }, [batchWords, effectiveQuizType, batchIndex, nodeType]);
+  }, [batchWords, effectiveQuizType, batchIndex, nodeType, words.length]);
+
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const initialQuestionsCountRef = useRef<number>(20);
+
+  useEffect(() => {
+    setQuestions(initialQuestions);
+    if (initialQuestions.length > 0) {
+      initialQuestionsCountRef.current = initialQuestions.length;
+    }
+  }, [initialQuestions]);
 
 
   // Debug: Log the number of generated questions and the effective quiz type
@@ -527,10 +570,11 @@ export default function useQuizScreen({
     // Reset timer for the new question but preserve auto‑next countdown handling
     const currentQuestionType = questions[currentIndex]?.type || effectiveQuizType;
     let baseTimer = getTimerForType(currentQuestionType);
-    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
+    if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'REVIEW') {
       if (currentQuestionType === 'MULTIPLE_CHOICE') baseTimer = 5;
       else if (currentQuestionType === 'SCRAMBLED_HIRA') baseTimer = 12;
       else if (currentQuestionType === 'WRITE_HIRA') baseTimer = 12;
+      else if (currentQuestionType === 'MEMORY_CARD') baseTimer = 25;
     }
 
     // Debuff Logic for Final Boss
@@ -615,8 +659,41 @@ export default function useQuizScreen({
 
   const handleNextQuestion = useStableCallback(() => {
     const totalCount = questions.length;
+    const isBossNode = nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'REVIEW';
+
     if (currentIndex + 1 >= totalCount) {
-      setShowResult(true);
+      if (isBossNode) {
+        const lastWords = questions.slice(-3).map(q => q.word.id);
+        let nextWords = [...batchWords];
+        
+        for (let attempt = 0; attempt < 100; attempt++) {
+          nextWords = shuffle(nextWords);
+          if (nextWords.length <= lastWords.length) {
+            const lastWordId = questions[questions.length - 1]?.word.id;
+            if (nextWords.length > 1 && nextWords[0].id === lastWordId) {
+              nextWords.push(nextWords.shift()!);
+            }
+            break;
+          }
+          
+          const firstOverlap = lastWords.slice(-2).includes(nextWords[0].id);
+          const secondOverlap = lastWords.slice(-1).includes(nextWords[1].id);
+          if (!firstOverlap && !secondOverlap) {
+            break;
+          }
+        }
+
+        const quizTypes: QuizType[] = ['MULTIPLE_CHOICE', 'LISTENING', 'SCRAMBLED_HIRA', 'MEMORY_CARD'];
+        const newQuestions: QuizQuestion[] = nextWords.map((word, idx) => {
+          const type = quizTypes[(questions.length + idx) % quizTypes.length];
+          return buildBossQuestion(word, type, batchWords);
+        });
+
+        setQuestions((prev) => [...prev, ...newQuestions]);
+        setCurrentIndex((prev) => prev + 1);
+      } else {
+        setShowResult(true);
+      }
       return;
     }
     setCurrentIndex((prev) => prev + 1);
@@ -642,7 +719,7 @@ export default function useQuizScreen({
   const currentWord = currentQuestion?.word ?? null;
   const activeType = currentQuestion?.type;
   const correctCount = answers.filter((item) => item.isCorrect).length;
-  const isBoss = nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM';
+  const isBoss = nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM' || nodeType === 'REVIEW';
 
   const tiles = useMemo(() => {
     if (!currentWord || !currentWord.hiragana || activeType !== 'SCRAMBLED_HIRA') return [];
@@ -1077,6 +1154,7 @@ export default function useQuizScreen({
     setResumeAnswers([]);
     setMatchRound(0);
     resetMatchStateForQuestion();
+    setQuestions(initialQuestions);
     setStepAnswers((prev) => {
       const next = [...prev];
       next[currentStep] = [];
@@ -1303,5 +1381,7 @@ export default function useQuizScreen({
     showMatchAnswers,
     isReviewComplete,
     activeDebuff,
+    initialTotalCount: initialQuestionsCountRef.current,
+    handleCheckAnswer,
   };
 }

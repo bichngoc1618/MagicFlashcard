@@ -172,6 +172,8 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     showMatchAnswers,
     isReviewComplete,
     activeDebuff,
+    initialTotalCount,
+    handleCheckAnswer,
   } = useQuizScreen({
     materialId,
     nodeId,
@@ -229,16 +231,16 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
 
   // BOSS BATTLE EARLY EXIT AND ENERGY MECHANIC
   const { rawEnergy, progressiveWrongCount, bossShieldActive, correctStreak, bossStunned } = React.useMemo(() => {
-    if (!isBoss || totalCount === 0) {
+    if (!isBoss || (initialTotalCount || totalCount) === 0) {
       return { rawEnergy: 50, progressiveWrongCount: 0, bossShieldActive: false, correctStreak: 0, bossStunned: false };
     }
     
     let energy = 50;
-    const step = 50 / totalCount;
+    const step = 50 / (initialTotalCount || totalCount);
     let consecutiveWrong = 0;
     let wrongSum = 0;
     
-    let shieldActive = true;
+    let shieldActive = nodeType !== 'REVIEW';
     let currentStreak = 0;
     let stunned = false;
     
@@ -247,16 +249,20 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         consecutiveWrong = 0;
         let damageMultiplier = 1.0;
         
-        if (shieldActive) {
-          currentStreak += 1;
-          damageMultiplier = 0.5;
-          if (currentStreak >= 3) {
-            shieldActive = false;
-            stunned = true;
+        if (nodeType === 'REVIEW') {
+          damageMultiplier = 1.0;
+        } else {
+          if (shieldActive) {
+            currentStreak += 1;
+            damageMultiplier = 0.5;
+            if (currentStreak >= 3) {
+              shieldActive = false;
+              stunned = true;
+            }
+          } else if (stunned) {
+            damageMultiplier = 1.5;
+            stunned = false;
           }
-        } else if (stunned) {
-          damageMultiplier = 1.5;
-          stunned = false;
         }
         
         energy += step * damageMultiplier;
@@ -267,12 +273,17 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
           currentStreak = 0;
         }
         
-        let baseMultiplier = consecutiveWrong === 1 ? 2.5 : (consecutiveWrong === 2 ? 4.5 : 7.0);
-        if (ans.activeDebuff === 'DOUBLE_DAMAGE') {
-          baseMultiplier *= 2.0;
+        let baseMultiplier;
+        if (nodeType === 'REVIEW') {
+          baseMultiplier = 3.0;
+        } else {
+          baseMultiplier = consecutiveWrong === 1 ? 2.5 : (consecutiveWrong === 2 ? 4.5 : 7.0);
+          if (ans.activeDebuff === 'DOUBLE_DAMAGE') {
+            baseMultiplier *= 2.0;
+          }
         }
         
-        const multiplier = bossResurrected ? baseMultiplier * 1.5 : baseMultiplier;
+        const multiplier = (nodeType !== 'REVIEW' && bossResurrected) ? baseMultiplier * 1.5 : baseMultiplier;
         energy -= step * multiplier;
       }
     });
@@ -284,7 +295,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
       correctStreak: currentStreak,
       bossStunned: stunned
     };
-  }, [isBoss, totalCount, answers, bossResurrected]);
+  }, [isBoss, totalCount, initialTotalCount, answers, bossResurrected, nodeType]);
 
   const energyPosition = isBoss ? Math.max(0, Math.min(100, rawEnergy - energyOffset)) : 50;
   const tugOfWarX = totalCount > 0 ? (50 / totalCount) : 0;
@@ -334,6 +345,18 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
               isAlreadyCompleted,
             });
 
+            if (nodeType === 'REVIEW' || nodeType === 'SRS_REVIEW') {
+              const results = answers.map(a => ({
+                cardId: Number(a.wordId),
+                score: a.isCorrect ? 100 : 0
+              }));
+              await completeSrsReview({
+                userId: Number(user.id),
+                materialId,
+                results,
+              }).catch(console.warn);
+            }
+
             if (nodeId) {
               await saveNodeStars({ userId: Number(user.id), materialId: Number(materialId), nodeId: String(nodeId), stars: 3 });
             }
@@ -369,7 +392,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
       if (sessionId) params.sessionId = Number(sessionId);
       navigation.navigate('MainTabs' as any, { screen: 'StudyJourney', params });
     }
-  }, [user?.id, sessionLogged, sessionId, materialId, currentNodeIndex, nodeId, batchIndex, resultTotalCount, resultCorrectCount, isAlreadyCompleted, authContext, streakUpdated, checkAndTriggerDailyStreak, refreshUserStats, heartDeducted, heartDeductionPending, deductHeartOnFailure, navigation]);
+  }, [user?.id, sessionLogged, sessionId, materialId, currentNodeIndex, nodeId, batchIndex, resultTotalCount, resultCorrectCount, isAlreadyCompleted, authContext, streakUpdated, checkAndTriggerDailyStreak, refreshUserStats, heartDeducted, heartDeductionPending, deductHeartOnFailure, navigation, answers, nodeType]);
 
   React.useEffect(() => {
     executeBossExitWrapperRef.current = executeBossExit;
@@ -382,7 +405,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     
     let timer: NodeJS.Timeout;
     if (energyPosition >= 100) {
-      if (!bossResurrected) {
+      if (nodeType !== 'REVIEW' && !bossResurrected) {
         setBossResurrected(true);
         setEnergyOffset(rawEnergy - 40);
         showAlert(
@@ -406,7 +429,7 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [isBoss, energyPosition, localHearts, bossResurrected, rawEnergy, showAlert]);
+  }, [isBoss, energyPosition, localHearts, bossResurrected, rawEnergy, showAlert, nodeType]);
 
 
   // Bộ lắng nghe chặn thao tác vuốt cạnh/bấm nút Back vật lý khi đang làm bài
@@ -668,8 +691,8 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     setChosenTileIds([]);
   });
 
-  const handleGameComplete = useStableCallback((_correct: boolean) => {
-    handleNextQuestion();
+  const handleGameComplete = useStableCallback((correct: boolean) => {
+    handleCheckAnswer(correct, 'MEMORY_CARD_COMPLETE');
   });
 
   if (isLoading) return <QuizLoadingState />;

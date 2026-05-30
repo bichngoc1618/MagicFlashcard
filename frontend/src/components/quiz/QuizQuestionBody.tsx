@@ -1204,6 +1204,7 @@ export default function QuizQuestionBody({
                 COLORS.placeholder
               }
               style={styles.input}
+              autoFocus={true}
             />
 
             <Text

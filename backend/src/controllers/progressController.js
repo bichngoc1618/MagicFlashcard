@@ -1190,7 +1190,6 @@ export const completeSrsReview = async (req, res) => {
       return res.status(400).json({ error: 'Thiếu tham số.' });
     }
 
-    const updates = [];
     for (const resItem of results) {
       const { cardId, score } = resItem;
       const quality = mapScoreToQuality(score);
@@ -1204,17 +1203,13 @@ export const completeSrsReview = async (req, res) => {
         const currentSrs = rows[0];
         const next = calculateNextReview(quality, currentSrs.repetition, currentSrs.easiness_factor, currentSrs.interval_days);
 
-        updates.push(db.query(
+        await db.query(
           `UPDATE user_srs_progress 
            SET repetition = ?, interval_days = ?, easiness_factor = ?, next_review_date = ?, last_reviewed_at = NOW()
            WHERE user_id = ? AND flashcard_id = ?`,
           [next.repetition, next.interval, next.easiness, next.nextReviewDate, userId, cardId]
-        ));
+        );
       }
-    }
-
-    if (updates.length > 0) {
-        await Promise.all(updates);
     }
     
     const xpReward = results.length * 5;

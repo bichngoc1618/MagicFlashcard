@@ -33,6 +33,12 @@ export const calculateNextReview = (quality, repetition, easiness, interval) => 
         newInterval = 1;   // Review again tomorrow
     }
 
+    // Cap the interval to prevent exponential explosion and DB date overflow.
+    // A maximum interval of 365 days (1 year) is a standard cap for SRS.
+    if (newInterval > 365) {
+        newInterval = 365;
+    }
+
     const nextReviewDate = new Date();
     nextReviewDate.setDate(nextReviewDate.getDate() + newInterval);
 
