@@ -247,20 +247,20 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
     answers.forEach((ans) => {
       if (ans.isCorrect) {
         consecutiveWrong = 0;
-        let damageMultiplier = 1.0;
+        let damageMultiplier = 1.2; // Tăng từ 1.0 lên 1.2 khi vỡ khiên/bình thường
         
         if (nodeType === 'REVIEW') {
           damageMultiplier = 1.0;
         } else {
           if (shieldActive) {
             currentStreak += 1;
-            damageMultiplier = 0.5;
+            damageMultiplier = 0.7; // Tăng từ 0.5 lên 0.7 khi còn khiên
             if (currentStreak >= 3) {
               shieldActive = false;
               stunned = true;
             }
           } else if (stunned) {
-            damageMultiplier = 1.5;
+            damageMultiplier = 1.5; // Giữ nguyên choáng là 1.5
             stunned = false;
           }
         }
@@ -277,13 +277,13 @@ export default function QuizScreen({ route, navigation }: QuizScreenProps) {
         if (nodeType === 'REVIEW') {
           baseMultiplier = 3.0;
         } else {
-          baseMultiplier = consecutiveWrong === 1 ? 2.5 : (consecutiveWrong === 2 ? 4.5 : 7.0);
+          baseMultiplier = consecutiveWrong === 1 ? 1.2 : (consecutiveWrong === 2 ? 2.0 : 3.5);
           if (ans.activeDebuff === 'DOUBLE_DAMAGE') {
-            baseMultiplier *= 2.0;
+            baseMultiplier *= 1.5; // Giảm hệ số nhân của DOUBLE_DAMAGE từ 2.0 xuống 1.5
           }
         }
         
-        const multiplier = (nodeType !== 'REVIEW' && bossResurrected) ? baseMultiplier * 1.5 : baseMultiplier;
+        const multiplier = (nodeType !== 'REVIEW' && bossResurrected) ? baseMultiplier * 1.2 : baseMultiplier; // Giảm hệ số nhân của Boss hồi sinh từ 1.5 xuống 1.2
         energy -= step * multiplier;
       }
     });

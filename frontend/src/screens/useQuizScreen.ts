@@ -581,7 +581,10 @@ export default function useQuizScreen({
     if (nodeType === 'FINAL_BOSS' || nodeType === 'FINAL_EXAM') {
       const rand = Math.random();
       if (rand < 0.25) {
-        const debuff = Math.random() < 0.5 ? 'DOUBLE_DAMAGE' : 'FREEZE';
+        let debuff: 'DOUBLE_DAMAGE' | 'FREEZE' | null = Math.random() < 0.5 ? 'DOUBLE_DAMAGE' : 'FREEZE';
+        if (debuff === 'FREEZE' && currentQuestionType !== 'MULTIPLE_CHOICE' && currentQuestionType !== 'LISTENING') {
+          debuff = 'DOUBLE_DAMAGE';
+        }
         setActiveDebuff(debuff);
         if (debuff === 'FREEZE') {
           baseTimer = 3;
